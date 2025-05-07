@@ -1,0 +1,30 @@
+{
+	"name": "vite-plugin-postgres-import",
+	"description": "Vite plugin for importing SQL files as JS modules with sqlc-style annotations",
+	"version": "0.1.0",
+	"main": "plugin.js",
+	"type": "module",
+	"author": "SirKostya009",
+	"license": "MIT",
+	"repository": "github:sirkostya009/vite-plugin-postgres-import",
+	"files": [
+		"index.d.ts",
+		"parse.js"
+	],
+	"keywords": [
+		"vite",
+		"postgres",
+		"import",
+		"sql",
+		"sqlc"
+	],
+	"devDependencies": {
+		"vite": "^6"
+	},
+	"peerDependencies": {
+		"pg": "*"
+	},
+	"engines": {
+		"node": ">=22.0.0"
+	}
+}
