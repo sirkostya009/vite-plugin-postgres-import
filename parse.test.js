@@ -125,20 +125,6 @@ test("test codegen", (t) => {
 	// console.log("codegen dts", dts);
 });
 
-const iterableQuery = `
--- name: AnotherDel :iterable
-select *
-from t
-where stuff = :stuff;
-`;
-
-test("test iterable query", (t) => {
-	const { js, dts } = unit.codegen(unit.parseModule(iterableQuery), "test.sql", false, "");
-	// console.log("codegen js", js);
-	// console.log("==========================");
-	// console.log("codegen dts", dts);
-});
-
 const nonParsableModule = `select 1;`;
 
 test("test non parsable module", (t) => {
@@ -164,6 +150,20 @@ returning from_user as "from";
 
 test("test real use case", (t) => {
 	const { js, dts } = unit.codegen(unit.parseModule(realUseCaseTest), "test.sql", false, "");
+	// console.log("codegen js", js);
+	// console.log("==========================");
+	// console.log("codegen dts", dts);
+});
+
+const iterableQuery = `
+-- name: AnotherDel :iterable
+select *
+from t
+where stuff = :stuff;
+`;
+
+test("test iterable query", (t) => {
+	const { js, dts } = unit.codegen(unit.parseModule(iterableQuery), "test.sql", false, "");
 	// console.log("codegen js", js);
 	// console.log("==========================");
 	// console.log("codegen dts", dts);
