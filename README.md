@@ -67,21 +67,21 @@ The only 3 sqlc annotations that are available are the following:
 
 -   `:execresult` - default if neither of the 3 below are provided, returns `QueryResult`.
 
-    ex: `Query<R extends QueryResultRow = { ... }>(c): Promise<QueryResult<R>>`
+    ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<QueryResult<R>>`
 
 -   `:one` - returns template argument, or the default-parsed ones from the select/returning clause.
 
-    ex: `Query<R = { ... }>(c): Promise<R>`
+    ex.: `Query<R = { ... }>(c): Promise<R>`
 
 -   `:many` - returns template argument as an array, or the default-parsed ones from the select/returning clause.
 
-    ex: `Query<R = { ... }>(c): Promise<R[]>`
+    ex.: `Query<R = { ... }>(c): Promise<R[]>`
 
 -   `:execrows` - returns number of affected rows.
 
-    ex: `Query(c): Promise<number>`
+    ex.: `Query(c): Promise<number>`
 
-2 additional annotations not found in sqlc are available:
+4 additional annotations not found in sqlc are available:
 
 -   `:prepare` - prepares the statement by passing query's name to query config.
 
@@ -130,6 +130,20 @@ The only 3 sqlc annotations that are available are the following:
     ex. `:one`: `Query<R = [ ... ]>(c): Promise<R>`
 
     ex. `:many`: `Query<R = [ ... ]>(c): Promise<R[]>`
+
+-   `:iterable` - returns an `AsyncGenerator`. Once [Async Iterator Helpers](https://github.com/tc39/proposal-async-iterator-helpers)
+    are in the standard, you can use crazy piping like following:
+
+```js
+const result = await IterableQuery<{ ... }>(c, { foo: 'bar' })
+    .flatMap(superComplicatedCodeThatIsMoreUsefulToRunFromJS)
+    .filter(Boolean)
+    .toArray();
+```
+
+-   `:cursor` - returns an `Cursor`
+
+    ex.: 
 
 ## Configuring
 
