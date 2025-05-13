@@ -43,7 +43,7 @@ where foo = :foo;
 import { Pool } from "pg";
 import { Query, UpdateQuery, QueryMany, MultiStatement } from "./module.sql";
 
-const pool = new Pool('...');
+const pool = new Pool("...");
 
 const { id } = await Query(pool, { id: 1 });
 
@@ -81,7 +81,7 @@ The only 4 sqlc annotations that are available are the following:
 
     ex.: `Query(c): Promise<number>`
 
-2 additional annotations not found in sqlc are available:
+4 additional annotations not found in sqlc are available:
 
 -   `:prepare` - prepares the statement by passing query's name to query config.
 
@@ -130,6 +130,20 @@ The only 4 sqlc annotations that are available are the following:
     ex. `:one`: `Query<R = [ ... ]>(c): Promise<R>`
 
     ex. `:many`: `Query<R = [ ... ]>(c): Promise<R[]>`
+
+-   `:iterable` - returns an `AsyncGenerator`. Once [Async Iterator Helpers](https://github.com/tc39/proposal-async-iterator-helpers)
+    are in the standard, you can use crazy piping like following:
+
+```js
+const result = await IterableQuery<{ ... }>(c, { foo: 'bar' })
+    .flatMap(superComplicatedCodeThatIsMoreUsefulToRunFromJS)
+    .filter(Boolean)
+    .toArray();
+```
+
+-   `:cursor` - returns an `Cursor`
+
+    ex.:
 
 ## Configuring
 
