@@ -10,7 +10,7 @@ export function* parseModule(/** @type {string} */ sql) {
 		const rema = matches[i];
 		const [first, ...rest] = sql
 			.substring(rema.index, i + 1 < matches.length ? matches[i + 1].index : sql.length)
-			.split(";")
+			.split(/;\s*$/m)
 			.map((s) => s.trim())
 			.filter(Boolean);
 		if (rest.length > 0) {
@@ -37,30 +37,33 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 		query,
 		params: new Set(query.matchAll(/(?<![\w_\\:]):[\w_]+/g).map((m) => m?.[0]?.substring(1))),
 		selectFields: selectList(/(with.*\))?\s*select\s+(?<select>.*)/ms.exec(query)?.groups?.select)
-			.map((s) => s.trim())
-			.map((s) => {
-				while (s.startsWith("(") && s.endsWith(")")) {
-					// unwrap
-					s = s.substring(1, s.length - 1).trim();
-				}
-				const gotDatAs = /as ([_\w"]+)$/.exec(s)?.[1];
-				if (gotDatAs) return gotDatAs.endsWith('"') && gotDatAs.includes(" ") ? `'${gotDatAs}'` : gotDatAs;
-				const uncCall = /^([\w_]+)[\(\[].*[\)\]]$/.exec(s)?.[1];
-				if (uncCall) return uncCall;
-				const subselect = /^select\s+([\w_]+)[,]?.*$/.exec(s)?.[1];
-				if (subselect) return subselect;
-				const word = /(^|\.)[a-zA-Z]+$/.exec(s)?.[0];
-				if (word) return word[0] === "." ? word.substring(1) : word;
-				const star = /^\*$/.exec(s)?.[0];
-				if (star) return "[column: string]";
-				return '"?column?"'; // ???
-			})
+			.map(parseResultSymbol)
 			.toArray(),
-		returningClause: /(with.*)?(update|delete|insert).*returning\s+(?<returning>.*)$/
+		returningClause: /returning\s+(?<returning>[\w\s,\*]+);?$/
 			.exec(query)
-			?.groups?.returning?.split(",")
-			?.filter(Boolean),
+			?.groups?.returning?.split(/,\s*/)
+			?.filter(Boolean)
+			?.map(parseResultSymbol),
 	};
+
+	function parseResultSymbol(/** @type {string} */ s) {
+		s = s.trim();
+		while (s.startsWith("(") && s.endsWith(")")) {
+			// unwrap
+			s = s.substring(1, s.length - 1).trim();
+		}
+		const gotDatAs = /as ([_\w"]+)$/.exec(s)?.[1];
+		if (gotDatAs) return gotDatAs.endsWith('"') && gotDatAs.includes(" ") ? `'${gotDatAs}'` : gotDatAs;
+		const uncCall = /^([\w_]+)[\(\[].*[\)\]]$/.exec(s)?.[1];
+		if (uncCall) return uncCall;
+		const subselect = /^select\s+([\w_]+)[,]?.*$/.exec(s)?.[1];
+		if (subselect) return subselect;
+		const word = /(^|\.)[a-zA-Z]+$/.exec(s)?.[0];
+		if (word) return word[0] === "." ? word.substring(1) : word;
+		const star = /^\*$/.exec(s)?.[0];
+		if (star) return "[column: string]";
+		return '"?column?"'; // ???
+	}
 
 	function* selectList(/** @type {string=} */ select) {
 		if (!select) return;
