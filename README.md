@@ -127,12 +127,12 @@ The only 4 sqlc annotations that are available are the following:
 
     ex. `:execresult`: `Query<R extends any[] = [ ... ]>(c): Promise<QueryArrayResult<R>>`
 
-    ex. `:one`: `Query<R = [ ... ]>(c): Promise<R>`
+    ex. `:one`: `Query<R extends any[] = [ ... ]>(c): Promise<R>`
 
-    ex. `:many`: `Query<R = [ ... ]>(c): Promise<R[]>`
+    ex. `:many`: `Query<R extends any[] = [ ... ]>(c): Promise<R[]>`
 
 -   `:iterable` - returns an `AsyncGenerator`. Once [Async Iterator Helpers](https://github.com/tc39/proposal-async-iterator-helpers)
-    are in the standard, you can use crazy piping like following:
+    are in the standard, you can use crazy piping as following:
 
 ```js
 const result = await IterableQuery<{ ... }>(c, { foo: 'bar' })
@@ -141,9 +141,19 @@ const result = await IterableQuery<{ ... }>(c, { foo: 'bar' })
     .toArray();
 ```
 
+Well maybe that didn't look too crazy, but if some filtering forces your squeel to become convoluted, and you're fine with moving
+some of that computation to JS, you can finally do that! Or at least when that proposal is in the language, that is.
+
 -   `:cursor` - returns an `Cursor`
 
-    ex.:
+<<<<<<< HEAD
+ex.:
+=======
+ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<Cursor<R>>`
+
+    ex. `:array`: `Query<R extends any[] = [ ... ]>(c): Promise<Cursor<R>>`
+
+> > > > > > > 77a627d (update readme)
 
 ## Configuring
 
