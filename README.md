@@ -63,23 +63,23 @@ const [all, something, deleted] = await MultiStatement(pool, { foo: "bar" });
 
 ## Annotations
 
-The only 3 sqlc annotations that are available are the following:
+The only 4 sqlc annotations that are available are the following:
 
 -   `:execresult` - default if neither of the 3 below are provided, returns `QueryResult`.
 
-    ex: `Query<R extends QueryResultRow = { ... }>(c): Promise<QueryResult<R>>`
+    ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<QueryResult<R>>`
 
 -   `:one` - returns template argument, or the default-parsed ones from the select/returning clause.
 
-    ex: `Query<R = { ... }>(c): Promise<R>`
+    ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<R>`
 
 -   `:many` - returns template argument as an array, or the default-parsed ones from the select/returning clause.
 
-    ex: `Query<R = { ... }>(c): Promise<R[]>`
+    ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<R[]>`
 
 -   `:execrows` - returns number of affected rows.
 
-    ex: `Query(c): Promise<number>`
+    ex.: `Query(c): Promise<number>`
 
 2 additional annotations not found in sqlc are available:
 
