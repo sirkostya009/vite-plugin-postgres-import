@@ -36,14 +36,12 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 		rowArray: meta?.tags?.includes(":array"),
 		query,
 		params: new Set(query.matchAll(/(?<![\w_\\:]):[\w_]+/g).map((m) => m?.[0]?.substring(1))),
-		selectFields: selectList(/(with.*\))?\s*select\s+(?<select>.*)/ms.exec(query)?.groups?.select)
+		selectFields: selectList(/(with.*\))?\s*select\s+(?<select>.*)/ims.exec(query)?.groups?.select)
 			.map(parseResultSymbol)
 			.toArray(),
-		returningClause: /returning\s+(?<returning>[\w\s,\*]+);?$/
-			.exec(query)
-			?.groups?.returning?.split(/,\s*/)
-			?.filter(Boolean)
-			?.map(parseResultSymbol),
+		returningClause: selectList(/returning\s+(?<returning>[\w\s\.\",\*]+);?$/im.exec(query)?.groups?.returning)
+			.map(parseResultSymbol)
+			.toArray(),
 	};
 
 	function parseResultSymbol(/** @type {string} */ s) {
@@ -52,11 +50,11 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 			// unwrap
 			s = s.substring(1, s.length - 1).trim();
 		}
-		const gotDatAs = /as ([_\w"]+)$/.exec(s)?.[1];
+		const gotDatAs = /as ([_\w"]+)$/i.exec(s)?.[1];
 		if (gotDatAs) return gotDatAs.endsWith('"') && gotDatAs.includes(" ") ? `'${gotDatAs}'` : gotDatAs;
 		const uncCall = /^([\w_]+)[\(\[].*[\)\]]$/.exec(s)?.[1];
 		if (uncCall) return uncCall;
-		const subselect = /^select\s+([\w_]+)[,]?.*$/.exec(s)?.[1];
+		const subselect = /^select\s+([\w_]+)[,]?.*$/i.exec(s)?.[1];
 		if (subselect) return subselect;
 		const word = /(^|\.)[a-zA-Z]+$/.exec(s)?.[0];
 		if (word) return word[0] === "." ? word.substring(1) : word;
@@ -72,7 +70,7 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 		let inString = null;
 		for (const token of select.matchAll(/([:\w_]+)|[\(\)'("")]|[,]|\*/g)) {
 			if (token[0] === inString) inString = null;
-			else if (token[0] === "'" || token[0] === "$$") inString = token[0];
+			else if (token[0] === "'" || token[0] === "$$" || token[0] === '"') inString = token[0];
 			if (token[0] === ")") nestingLevel--;
 			else if (token[0] === "(") nestingLevel++;
 			else if (token[0] === "," && nestingLevel === 0 && !inString) {
