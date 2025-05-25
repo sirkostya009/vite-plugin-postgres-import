@@ -146,14 +146,9 @@ some of that computation to JS, you can finally do that! Or at least when that p
 
 -   `:cursor` - returns an `Cursor`
 
-<<<<<<< HEAD
-ex.:
-=======
 ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<Cursor<R>>`
 
     ex. `:array`: `Query<R extends any[] = [ ... ]>(c): Promise<Cursor<R>>`
-
-> > > > > > > 77a627d (update readme)
 
 ## Configuring
 
