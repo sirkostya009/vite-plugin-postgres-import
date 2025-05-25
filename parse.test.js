@@ -125,6 +125,7 @@ test("test codegen", (t) => {
 	// console.log("codegen dts", dts);
 });
 
+<<<<<<< HEAD
 const nonParsableModule = `select 1;`;
 
 test("test non parsable module", (t) => {
@@ -133,6 +134,8 @@ test("test non parsable module", (t) => {
 	t.assert.deepEqual(modules.length, 0);
 });
 
+=======
+>>>>>>> 68df3b2 (fixed a whole lotta bugs)
 const iterableQuery = `
 -- name: AnotherDel :iterable
 select *
@@ -147,6 +150,39 @@ test("test iterable query", (t) => {
 	// console.log("codegen dts", dts);
 });
 
+<<<<<<< HEAD
+=======
+const nonParsableModule = `select 1;`;
+
+test("test non parsable module", (t) => {
+	const modules = unit.parseModule(nonParsableModule).toArray();
+	// console.log("non parsable module", modules);
+	t.assert.deepEqual(modules.length, 0);
+});
+
+const realUseCaseTest = `
+-- name: InsertMessage :one
+insert into account.messages (to_user, from_user, listing_table, listing_id, content)
+select :to, :from, tableoid::regclass, :listingId, :content
+from account.listing
+where id = :listingId
+returning messages.id;
+
+-- name: MarkRead :one
+update account.messages
+set read_at = current_timestamp
+where id = :id and read_at is not null and to_user = :to
+returning from_user as "from";
+`;
+
+test("test real use case", (t) => {
+	const { js, dts } = unit.codegen(unit.parseModule(realUseCaseTest), "test.sql", false, "");
+	// console.log("codegen js", js);
+	// console.log("==========================");
+	// console.log("codegen dts", dts);
+});
+
+>>>>>>> 68df3b2 (fixed a whole lotta bugs)
 const cursorQuery = `
 -- name: AnotherDel :cursor :array
 select *
