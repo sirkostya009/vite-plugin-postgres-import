@@ -26,7 +26,7 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 	annotationRegex.lastIndex = 0;
 	const match = firstMeta ? /--\s*(?<tags>(:\w+\s*)*)\r?\n/.exec(s) : annotationRegex.exec(s);
 	const meta = match?.groups;
-	const query = s.substring(match[0].length).trim();
+	const query = s.substring(match?.[0]?.length ?? 0).trim();
 
 	return {
 		name: firstMeta?.name || meta?.name,
