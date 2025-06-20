@@ -10,23 +10,24 @@ export default function postgres({
 } = {}) {
 	return {
 		name: "vite-plugin-sql-postgres",
-		resolveId(id) {
-			if (id.endsWith(".sql")) {
-				return id;
-			}
+		transform: {
+			filter: {
+				id: /\.sql$/,
+			},
+			handler: transform,
 		},
-		load,
 		async configureServer(server) {
-			server.watcher.on("add", load);
+			server.watcher.on("add", async (path) => transform(await fs.readFile(path, "utf8"), path));
 
 			await walkdir(rootFolder);
 
 			async function walkdir(/** @type {string} */ p) {
 				for await (const entry of await fs.opendir(p)) {
+					const entryPath = path.join(entry.parentPath, entry.name);
 					if (entry.isFile()) {
-						await load(path.relative(rootFolder, path.join(entry.parentPath, entry.name)));
+						await transform(await fs.readFile(entryPath, "utf8"), entryPath);
 					} else if (entry.isDirectory()) {
-						await walkdir(path.join(entry.parentPath, entry.name));
+						await walkdir(entryPath);
 					}
 				}
 			}
@@ -36,10 +37,8 @@ export default function postgres({
 		},
 	};
 
-	async function load(/** @type {string} */ id) {
-		if (!id.endsWith(".sql")) return null;
-		const sql = await fs.readFile(id, "utf8");
-
+	/** @returns {Promise<import("vite").TransformResult>} */
+	async function transform(/** @type {string} */ sql, /** @type {string} */ id) {
 		const filename = path.basename(id, ".sql");
 
 		const { js, dts } = codegen(parseModule(sql), filename, modulePrefix);
@@ -48,6 +47,9 @@ export default function postgres({
 		await fs.mkdir(dtsFolder, { recursive: true });
 		await fs.writeFile(path.join(dtsFolder, filename + ".sql.d.ts"), dts);
 
-		return js;
+		return {
+			code: js,
+			moduleType: "js",
+		};
 	}
 }
