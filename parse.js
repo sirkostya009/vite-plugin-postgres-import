@@ -92,7 +92,9 @@ export function codegen(
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
-		`import type { Pool, ClientBase, QueryResultRow, QueryResult, QueryArrayResult } from 'pg';\nimport Cursor from 'pg-cursor';`,
+		`import type { Pool, ClientBase, QueryResultRow, QueryResult, QueryArrayResult } from 'pg';${
+			module.mode ? `\nimport Cursor from 'pg-cursor'` : ""
+		};`,
 	];
 	let js = [`import { escapeLiteral } from 'pg';`];
 
