@@ -27,25 +27,6 @@ test("test simple module", (t) => {
 	}
 });
 
-test("test simple module", (t) => {
-	try {
-		const [parsed] = unit.parseModule(simpleModule).toArray();
-		// console.log("parsed simple module", parsed);
-		t.assert.strictEqual(parsed.name, "Simple");
-		t.assert.strictEqual(parsed.execution, ":one");
-		t.assert.strictEqual(parsed.prepared, true);
-		t.assert.strictEqual(parsed.query, "select 1");
-		// console.log("params", parsed.params, parsed.params.size, parsed.params.size === 0);
-		// console.log("selectFields", parsed.selectFields, parsed.selectFields.size);
-		// t.assert.strictEqual(parsed.params.size(), 0);
-		t.assert.strictEqual(parsed.selectFields.length, 1);
-		t.assert.strictEqual(parsed.returningClause.length, 0);
-	} catch (err) {
-		console.error(err);
-		throw err;
-	}
-});
-
 const multiStatementModule = `
 -- name: Multi :one
 select 1;
@@ -61,24 +42,12 @@ test("test multi-statement module", (t) => {
 	t.assert.strictEqual(module.length, 2);
 });
 
-test("test multi-statement module", (t) => {
-	const [module] = unit.parseModule(multiStatementModule).toArray();
-	// console.log("parsed multi statement module", module);
-	t.assert.strictEqual(module.length, 2);
-});
-
 const deleteModule = `
 -- name: Del :one
 delete from table
 where name = :name
 returning name, timestamp;
 `;
-
-test("test delete module", (t) => {
-	const [module] = unit.parseModule(deleteModule).toArray();
-	// console.log("parsed delete module", module);
-	t.assert.deepEqual(module.name, "Del");
-});
 
 test("test delete module", (t) => {
 	const [module] = unit.parseModule(deleteModule).toArray();
