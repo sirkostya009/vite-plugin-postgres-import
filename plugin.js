@@ -39,6 +39,9 @@ export default function postgres({
 
 	/** @returns {Promise<import("vite").TransformResult>} */
 	async function transform(/** @type {string} */ sql, /** @type {string} */ id) {
+		if (!/\.sql$/.test(id)) {
+			return;
+		}
 		const filename = path.basename(id, ".sql");
 
 		const { js, dts } = codegen(parseModule(sql), filename, modulePrefix);
