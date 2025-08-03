@@ -55,7 +55,7 @@ const array = await QueryMany(pool);
 const [all, something, deleted] = await MultiStatement(pool, { foo: "bar" });
 ```
 
-> ### **Note**
+> [!Warning]
 >
 > Postgres does _NOT_ allow using parameters in multi-statement queries.
 >
@@ -85,11 +85,11 @@ The only 4 sqlc annotations that are available are the following:
 
 -   `:prepare` - prepares the statement by passing query's name to query config.
 
-> ### **Warning**
+> [!Warning]
 >
 > Similarly to parameters, Postgres does _NOT_ allow preparing multi-statement queries. Using `:prepare` on a multi-statement query will result in an error. I warned you!
 
-> ### **Warning**
+> [!Warning]
 >
 > Don't use identical names for prepared queries, regardless whether they're in different `.sql` modules or not:
 >
