@@ -118,7 +118,7 @@ export function codegen(
 		}
 
 		if (module.mode) {
-			dts[0] = dts[0] += `\nimport Cursor from 'pg-cursor';`;
+			dts[0] += `\nimport Cursor from 'pg-cursor';`;
 			js.push(`import Cursor from 'pg-cursor';`);
 		}
 
