@@ -154,7 +154,7 @@ export function ${module.name}<${module.returnSymbols
 				? `Cursor<R1>`
 				: module.mode === ":iterable"
 				? `AsyncGenerator<R1, void, unknown>`
-				: ` Promise<${module.multiStatement && "["}${module.returnSymbols
+				: `Promise<${module.multiStatement && "["}${module.returnSymbols
 						.map((_, i) =>
 							module.execution[i] === ":execresult"
 								? `Query${module.rowArray ? "Array" : ""}Result<R${i + 1}>`
