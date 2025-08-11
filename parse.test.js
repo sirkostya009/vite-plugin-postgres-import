@@ -148,5 +148,5 @@ test("test cursor query", (t) => {
 	const { js, dts } = unit.codegen(unit.parseModule(cursorQuery), "test.sql", false, "");
 	// console.log("codegen js", js);
 	// console.log("==========================");
-	console.log("codegen dts", dts);
+	// console.log("codegen dts", dts);
 });
