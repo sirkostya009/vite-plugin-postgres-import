@@ -92,9 +92,7 @@ export function codegen(
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
-		`import type { Pool, ClientBase, QueryResultRow, QueryResult, QueryArrayResult } from 'pg';${
-			module.mode ? `\nimport Cursor from 'pg-cursor'` : ""
-		};`,
+		`import type { Pool, ClientBase, QueryResultRow, QueryResult, QueryArrayResult } from 'pg';`,
 	];
 	let js = [`import { escapeLiteral } from 'pg';`];
 
@@ -120,6 +118,7 @@ export function codegen(
 		}
 
 		if (module.mode) {
+			dts[0] = dts[0] += `\nimport Cursor from 'pg-cursor';`;
 			js.push(`import Cursor from 'pg-cursor';`);
 		}
 
