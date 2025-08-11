@@ -117,6 +117,11 @@ export function codegen(
 			module.returnSymbols = module.returnSymbols.map((rs) => [...new Set(rs)]);
 		}
 
+		if (module.mode) {
+			dts[0] += `\nimport Cursor from 'pg-cursor';`;
+			js.push(`import Cursor from 'pg-cursor';`);
+		}
+
 		const keys = module.params
 			.values()
 			.map((k) => `'${k}'`)
@@ -141,20 +146,28 @@ export function ${module.name}<${module.returnSymbols
 					  }${r.length > 3 ? "\n" : " "}}`
 			)
 			.join(", ")}>(
-	tx: Pool | ClientBase | Promise<ClientBase>,${keys.length ? `\n\tparams: Record<${keys}, unknown>` : ``}
-): Promise<${module.multiStatement && "["}${module.returnSymbols
-			.map((_, i) =>
-				module.execution[i] === ":execresult"
-					? `Query${module.rowArray ? "Array" : ""}Result<R${i + 1}>`
-					: module.execution[i] === ":one"
-					? `R${i + 1}`
-					: module.execution[i] === ":many"
-					? `R${i + 1}[]`
-					: module.execution[i] === ":execrows"
-					? `number`
-					: "unknown"
-			)
-			.join(", ")}${module.multiStatement && "]"}>;`);
+	tx: Pool | ClientBase | Promise<ClientBase>,${keys && `\n\tparams: Record<${keys}, unknown>,`}${
+			module.mode === ":iterable" ? `\n\tread?: number,` : ""
+		}
+): ${
+			module.mode === ":cursor"
+				? `Cursor<R1>`
+				: module.mode === ":iterable"
+				? `AsyncGenerator<R1, void, unknown>`
+				: `Promise<${module.multiStatement && "["}${module.returnSymbols
+						.map((_, i) =>
+							module.execution[i] === ":execresult"
+								? `Query${module.rowArray ? "Array" : ""}Result<R${i + 1}>`
+								: module.execution[i] === ":one"
+								? `R${i + 1}`
+								: module.execution[i] === ":many"
+								? `R${i + 1}[]`
+								: module.execution[i] === ":execrows"
+								? `number`
+								: "unknown"
+						)
+						.join(", ")}${module.multiStatement && "]"}>`
+		};`);
 
 		const paramsString = module.params
 			.values()
@@ -178,26 +191,47 @@ export function ${module.name}<${module.returnSymbols
 		}
 
 		js.push(
-			`export const ${module.name} = async (tx, { ${paramsString} } = {}) => (await tx).query({
+			module.mode === ":cursor"
+				? `export const ${module.name} = async (tx${
+						paramsString && `, { ${paramsString} } = {}`
+				  }) => (await tx).query(new Cursor(\`${module.query}\`${paramsString && `, [ ${paramsString} ]`}${
+						module.rowArray ? `, { rowMode: "array" }` : ""
+				  }));`
+				: module.mode === ":iterable"
+				? `export async function* ${module.name}(tx, ${paramsString && `{ ${paramsString} } = {}, `}read = 10) {
+	const cursor = (await tx).query(new Cursor(\`${module.query}\`${paramsString && `, [ ${paramsString} ]`}${
+						module.rowArray ? `, { rowMode: "array" }` : ""
+				  }));
+	try {
+		let _read;
+		do {
+			_read = await cursor.read(read);
+			yield* _read;
+		} while (_read.length === read);
+	} finally {
+		await cursor.close();
+	}
+}`
+				: `export const ${module.name} = async (tx, { ${paramsString} } = {}) => (await tx).query({
 	${module.prepared ? `name: "${module.name}",` : ""}
 	text: \`${module.multiStatement ? module.query : module.query}\`,
 	values: [ ${module.multiStatement || paramsString} ],
 	${module.rowArray ? `rowMode: "array",` : ""}
 }).then((${module.multiStatement && "["}${module.returnSymbols.map((_, i) => `r${i + 1}`).join()}${
-				module.multiStatement && "]"
-			}) => ${module.multiStatement && "["}${module.returnSymbols
-				.map(
-					(_, i) =>
-						`r${i + 1}` +
-						(module.execution[i] === ":one"
-							? `.rows[0]`
-							: module.execution[i] === ":many"
-							? `.rows`
-							: module.execution[i] === ":execrows"
-							? `.rowCount`
-							: "")
-				)
-				.join()}${module.multiStatement && "]"});`
+						module.multiStatement && "]"
+				  }) => ${module.multiStatement && "["}${module.returnSymbols
+						.map(
+							(_, i) =>
+								`r${i + 1}` +
+								(module.execution[i] === ":one"
+									? `.rows[0]`
+									: module.execution[i] === ":many"
+									? `.rows`
+									: module.execution[i] === ":execrows"
+									? `.rowCount`
+									: "")
+						)
+						.join()}${module.multiStatement && "]"});`
 		);
 	}
 

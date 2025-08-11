@@ -123,3 +123,30 @@ test("test real use case", (t) => {
 	// console.log("==========================");
 	// console.log("codegen dts", dts);
 });
+
+const iterableQuery = `
+-- name: AnotherDel :iterable
+select *
+from t
+where stuff = :stuff;
+`;
+
+test("test iterable query", (t) => {
+	const { js, dts } = unit.codegen(unit.parseModule(iterableQuery), "test.sql", false, "");
+	// console.log("codegen js", js);
+	// console.log("==========================");
+	// console.log("codegen dts", dts);
+});
+
+const cursorQuery = `
+-- name: AnotherDel :cursor :array
+select *
+from t;
+`;
+
+test("test cursor query", (t) => {
+	const { js, dts } = unit.codegen(unit.parseModule(cursorQuery), "test.sql", false, "");
+	// console.log("codegen js", js);
+	// console.log("==========================");
+	// console.log("codegen dts", dts);
+});
