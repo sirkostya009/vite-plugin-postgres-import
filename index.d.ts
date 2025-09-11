@@ -1,3 +1,12 @@
+import type {
+	QueryArrayConfig,
+	QueryArrayResult,
+	QueryConfig,
+	QueryConfigValues,
+	QueryResult,
+	QueryResultRow,
+	Submittable,
+} from "pg";
 import type { Plugin } from "vite";
 
 export default function postgres(opts?: {
@@ -18,3 +27,21 @@ export default function postgres(opts?: {
 	 */
 	rootFolder?: string;
 }): Plugin;
+
+export interface QueryableObject {
+	query<T extends Submittable>(queryStream: T): T;
+
+	query<R extends any[] = any[], I = any[]>(
+		queryConfig: QueryArrayConfig<I>,
+		values?: QueryConfigValues<I>
+	): Promise<QueryArrayResult<R>>;
+
+	query<R extends QueryResultRow = any, I = any>(queryConfig: QueryConfig<I>): Promise<QueryResult<R>>;
+
+	query<R extends QueryResultRow = any, I = any[]>(
+		queryTextOrConfig: string | QueryConfig<I>,
+		values?: QueryConfigValues<I>
+	): Promise<QueryResult<R>>;
+}
+
+export type Queryable = QueryableObject | Promise<QueryableObject>;

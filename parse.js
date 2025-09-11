@@ -92,7 +92,7 @@ export function codegen(
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
-		`import type { Pool, ClientBase, QueryResultRow, QueryResult, QueryArrayResult } from 'pg';`,
+		`import type { QueryResultRow, QueryResult, QueryArrayResult } from 'pg';\nimport { Queryable } from 'vite-plugin-postgres-import';`,
 	];
 	let js = [`import { escapeLiteral } from 'pg';`];
 
@@ -146,7 +146,7 @@ export function ${module.name}<${module.returnSymbols
 					  }${r.length > 3 ? "\n" : " "}}`
 			)
 			.join(", ")}>(
-	tx: Pool | ClientBase | Promise<ClientBase>,${keys && `\n\tparams: Record<${keys}, unknown>,`}${
+	tx: Queryable,${keys && `\n\tparams: Record<${keys}, unknown>,`}${
 			module.mode === ":iterable" ? `\n\tread?: number,` : ""
 		}
 ): ${

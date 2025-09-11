@@ -1,7 +1,7 @@
 {
 	"name": "vite-plugin-postgres-import",
 	"description": "Vite plugin for importing SQL files as JS modules with sqlc-style annotations",
-	"version": "0.5.0",
+	"version": "0.6.0",
 	"main": "plugin.js",
 	"type": "module",
 	"author": "SirKostya009",
@@ -22,11 +22,15 @@
 		"vite": "^6"
 	},
 	"peerDependencies": {
+		"pg": "*",
 		"pg-cursor": "*",
-		"pg": "*"
+		"@types/pg": "*"
 	},
 	"peerDependenciesMeta": {
 		"pg-cursor": {
+			"optional": true
+		},
+		"@types/pg": {
 			"optional": true
 		}
 	},
