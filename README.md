@@ -160,10 +160,6 @@ Make sure you include this one in your `tsconfig.json` as `"${typesFolder}/**/*.
 
 _default:_ `'node_modules/@types/vite-plugin-postgres-import/'`
 
-### `modulePrefix`
-
-**CURRENTLY DISABLED**. This one changes the type declaration generation strategy to generate everything as `declare module` statements.
-
 ### `rootFolder`
 
 Root folder relative to which path calculation will be happening. May be useful for some I guess.
@@ -182,6 +178,8 @@ And JavaScript projects still get the benefits of completions.
 ## SvelteKit use case
 
 I primarily use this in a SvelteKit project. The only thing I modify is setting `typesFolder` to `'.svelte-kit/types'` directory, and adding a `".svelte-kit/types/**/*.sql.d.ts"` record to my `include` array in `tsconfig.json`.
+
+Also, when using SvelteKit aliases you can absolutely shove all your sql modules in a `src/sql` directory with a `$sql` alias and have module declarations generated for all of the files! Works automagically out of the box.
 
 ## License
 

@@ -1,5 +1,7 @@
 const annotationRegex = /--\s*name:\s*(?<name>[a-zA-Z][\w_]*)\s*(?<tags>(:\w+\s*)*)?\r?\n/g;
 
+const partial = Symbol();
+
 export function* parseModule(/** @type {string} */ sql) {
 	annotationRegex.lastIndex = 0;
 
@@ -88,7 +90,7 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 export function codegen(
 	/** @type {Iterable<ReturnType<typeof metadata> | ReturnType<typeof metadata>[]>} */ modules,
 	/** @type {string} */ filename,
-	/** @type {string} */ modulePrefix
+	/** @type {ReturnType<typeof parseLocalSvelteConfigAliases>} */ aliases
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
@@ -235,5 +237,38 @@ export function ${module.name}<${module.returnSymbols
 		);
 	}
 
-	return { js: js.join("\n"), dts: dts.join("\n\n") + "\n" };
+	const match = aliases[filename] ?? aliases[partial].find(({ path }) => filename.startsWith(path));
+	let moduleDeclaration = [];
+	if (match) {
+		const mod = "path" in match ? match.alias + filename.replace(match.path, "") : match.alias;
+		moduleDeclaration.push(`declare module "${mod}" {`, dts[0], ...dts.slice(1), `}`);
+	}
+
+	return { js: js.join("\n"), dts: dts.join("\n\n") + "\n", moduleDeclaration };
+}
+
+/** @returns {{ [partial]: { path: string; alias: string; }[]; [k: string]: { alias: string } }} */
+export async function parseLocalSvelteConfigAliases() {
+	/** @type {{ default: import('@sveltejs/kit').Config }} */
+	const { default: svelteConfig } = await import(process.cwd() + "/svelte.config.js").catch(() => ({
+		default: {},
+	}));
+
+	const aliases = svelteConfig.kit?.alias ?? {};
+
+	return Object.entries(aliases).reduce(
+		(acc, [alias, path]) => {
+			if (path.endsWith(".sql")) {
+				acc[path] = { alias };
+			} else {
+				if (path.endsWith("/*")) {
+					path = path.substring(0, path.length - 1);
+					alias = alias.substring(0, alias.length - 1);
+				}
+				acc[partial].push({ path, alias });
+			}
+			return acc;
+		},
+		{ [partial]: [] }
+	);
 }

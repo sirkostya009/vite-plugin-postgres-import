@@ -1,13 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { codegen, parseModule } from "./parse.js";
+import { codegen, parseLocalSvelteConfigAliases, parseModule } from "./parse.js";
 
 /** @returns {import('vite').Plugin} */
-export default function postgres({
+export default async function postgres({
 	typesFolder = "node_modules/@types/vite-plugin-postgres-import/",
-	modulePrefix = "",
 	rootFolder = process.cwd(),
 } = {}) {
+	const aliases = await parseLocalSvelteConfigAliases();
+
+	const moduleDeclarations = new Map();
+
 	return {
 		name: "vite-plugin-sql-postgres",
 		transform: {
@@ -42,13 +45,17 @@ export default function postgres({
 		if (!/\.sql$/.test(id)) {
 			return;
 		}
-		const filename = path.basename(id, ".sql");
+		const filename = path.relative(rootFolder, id);
 
-		const { js, dts } = codegen(parseModule(sql), filename, modulePrefix);
+		const { js, dts, moduleDeclaration } = codegen(parseModule(sql), filename, aliases);
 
 		const dtsFolder = path.join(typesFolder, path.relative(rootFolder, path.dirname(id)));
 		await fs.mkdir(dtsFolder, { recursive: true });
-		await fs.writeFile(path.join(dtsFolder, filename + ".sql.d.ts"), dts);
+		await fs.writeFile(path.join(dtsFolder, path.basename(filename, ".sql") + ".sql.d.ts"), dts);
+		if (moduleDeclaration.length) {
+			moduleDeclarations.set(filename, moduleDeclaration.join("\n"));
+			await fs.writeFile(path.join(typesFolder, "modules.sql.d.ts"), [...moduleDeclarations.values()].join("\n"));
+		}
 
 		return {
 			code: js,

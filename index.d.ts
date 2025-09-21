@@ -17,10 +17,6 @@ export default function postgres(opts?: {
 	 */
 	typesFolder?: string;
 	/**
-	 * **CURRENTLY DISABLED**. This one changes the type declaration generation strategy to generate everything as `declare module` statements.
-	 */
-	modulePrefix?: string;
-	/**
 	 * Root folder relative to which path calculation will be happening. May be useful for some I guess.
 	 *
 	 * @default process.cwd()
