@@ -90,7 +90,7 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 export function codegen(
 	/** @type {Iterable<ReturnType<typeof metadata> | ReturnType<typeof metadata>[]>} */ modules,
 	/** @type {string} */ filename,
-	/** @type {ReturnType<typeof parseLocalSvelteConfigAliases>} */ aliases
+	/** @type {Awaited<ReturnType<typeof parseLocalSvelteConfigAliases>>} */ aliases
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
@@ -247,7 +247,7 @@ export function ${module.name}<${module.returnSymbols
 	return { js: js.join("\n"), dts: dts.join("\n\n") + "\n", moduleDeclaration };
 }
 
-/** @returns {{ [partial]: { path: string; alias: string; }[]; [k: string]: { alias: string } }} */
+/** @returns {Promise<{ [partial]: { path: string; alias: string; }[]; [k: string]: { alias: string } }>} */
 export async function parseLocalSvelteConfigAliases() {
 	/** @type {{ default: import('@sveltejs/kit').Config }} */
 	const { default: svelteConfig } = await import(process.cwd() + "/svelte.config.js").catch(() => ({
