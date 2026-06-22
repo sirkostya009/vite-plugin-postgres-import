@@ -250,9 +250,11 @@ export function ${module.name}<${module.returnSymbols
 /** @returns {Promise<{ [partial]: { path: string; alias: string; }[]; [k: string]: { alias: string } }>} */
 export async function parseLocalSvelteConfigAliases() {
 	/** @type {{ default: import('@sveltejs/kit').Config }} */
-	const { default: svelteConfig } = await import(process.cwd() + "/svelte.config.js").catch(() => ({
-		default: {},
-	}));
+	const { default: svelteConfig } = await import(process.cwd() + "/svelte.config.js")
+		// todo: svelte now actually supports passing config to the vite plugin gotta extract it from there somehow
+		.catch(() => ({
+			default: {},
+		}));
 
 	const aliases = svelteConfig.kit?.alias ?? {};
 
@@ -269,6 +271,6 @@ export async function parseLocalSvelteConfigAliases() {
 			}
 			return acc;
 		},
-		{ [partial]: [] }
+		{ [partial]: [] },
 	);
 }
