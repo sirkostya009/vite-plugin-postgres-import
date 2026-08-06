@@ -200,6 +200,92 @@ matching `.sql` files get ambient module declarations generated for their aliase
 With that, `import { Query } from "#sql/module.sql"` is fully typed — declarations land in `${typesFolder}/modules.sql.d.ts`.
 Exact and conditional (`{ "node": ..., "default": ... }`) targets are supported too.
 
+## Transactions
+
+With the `'function'` runtime type, the runtime is re-evaluated on every query call — which means it can
+consult [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html#class-asynclocalstorage) and pick up
+an _ambient_ transaction: queries anywhere down the call stack automatically run on the transaction's client,
+no threading of `{ db }` through your functions. Combined with
+[explicit resource management](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/await_using)
+you get commit-explicitly, rollback-on-dispose semantics without any callback wrapping.
+
+`vite.config.js`:
+
+```js
+postgres({ runtime: { type: "function" } });
+```
+
+`db-runtime.js`:
+
+```js
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Pool } from "pg";
+
+const pool = new Pool("...");
+export const als = new AsyncLocalStorage();
+
+export const db = () => als.getStore()?.current ?? pool;
+
+let spSeq = 0;
+
+// pushes a new transaction on the frame,
+// nested calls result in savepoints.
+export async function transaction(begin = "begin") {
+	const frame = als.getStore();
+
+	if (frame.current) {
+		// already inside a transaction - nest via a savepoint on the same client
+		const client = frame.current;
+		const name = `sp_${++spSeq}`;
+		await client.query(`savepoint ${name}`);
+		let done = false;
+		const finish = async (q) => {
+			done = true;
+			await client.query(q);
+		};
+		return {
+			db: client,
+			commit: () => finish(`release savepoint ${name}`),
+			rollback: () => finish(`rollback to savepoint ${name}`),
+			async [Symbol.asyncDispose]() {
+				if (!done) await finish(`rollback to savepoint ${name}`);
+			},
+		};
+	}
+
+	const client = await pool.connect();
+	await client.query(begin);
+	frame.current = client;
+	let done = false;
+	const finish = async (q) => {
+		done = true;
+		frame.current = undefined;
+		try {
+			await client.query(q);
+		} finally {
+			client.release();
+		}
+	};
+	return {
+		db: client,
+		commit: () => finish("commit"),
+		rollback: () => finish("rollback"),
+		async [Symbol.asyncDispose]() {
+			if (!done) await finish("rollback");
+		},
+	};
+}
+```
+
+```js
+import { transaction } from "#db-runtime";
+
+await using tx = await transaction();
+await UpdateQuery({ id: 1, newFoo: "bar" });
+await InsertAudit({ id: 1 }); // same transaction, however deep the call stack
+await tx.commit(); // anything thrown before this point rolls back on scope exit
+```
+
 ## Jump to source
 
 Generated `.d.ts` files ship with declaration maps pointing back at the original `.sql` file,
