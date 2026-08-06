@@ -246,31 +246,3 @@ export function ${module.name}<${module.returnSymbols
 
 	return { js: js.join("\n"), dts: dts.join("\n\n") + "\n", moduleDeclaration };
 }
-
-/** @returns {Promise<{ [partial]: { path: string; alias: string; }[]; [k: string]: { alias: string } }>} */
-export async function parseLocalSvelteConfigAliases() {
-	/** @type {{ default: import('@sveltejs/kit').Config }} */
-	const { default: svelteConfig } = await import(process.cwd() + "/svelte.config.js")
-		// todo: svelte now actually supports passing config to the vite plugin gotta extract it from there somehow
-		.catch(() => ({
-			default: {},
-		}));
-
-	const aliases = svelteConfig.kit?.alias ?? {};
-
-	return Object.entries(aliases).reduce(
-		(acc, [alias, path]) => {
-			if (path.endsWith(".sql")) {
-				acc[path] = { alias };
-			} else {
-				if (path.endsWith("/*")) {
-					path = path.substring(0, path.length - 1);
-					alias = alias.substring(0, alias.length - 1);
-				}
-				acc[partial].push({ path, alias });
-			}
-			return acc;
-		},
-		{ [partial]: [] },
-	);
-}

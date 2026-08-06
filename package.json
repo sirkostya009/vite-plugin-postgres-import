@@ -25,12 +25,16 @@
 	},
 	"peerDependencies": {
 		"@sveltejs/kit": "^2",
+		"@sveltejs/load-config": "^0.2.0",
+		"@types/pg": "*",
 		"pg": "*",
-		"pg-cursor": "*",
-		"@types/pg": "*"
+		"pg-cursor": "*"
 	},
 	"peerDependenciesMeta": {
 		"@sveltejs/kit": {
+			"optional": true
+		},
+		"@sveltejs/load-config": {
 			"optional": true
 		},
 		"pg-cursor": {

@@ -1,13 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { codegen, parseLocalSvelteConfigAliases, parseModule } from "./parse.js";
+import { codegen, parseModule } from "./parse.js";
 
 /** @returns {import('vite').Plugin} */
 export default async function postgres({
 	typesFolder = "node_modules/@types/vite-plugin-postgres-import/",
 	rootFolder = process.cwd(),
 } = {}) {
-	const aliases = await parseLocalSvelteConfigAliases();
+	const aliases = await import("@sveltejs/load-config").then((r) => r.loadConfig(rootFolder)).catch(() => null);
 
 	const moduleDeclarations = new Map();
 

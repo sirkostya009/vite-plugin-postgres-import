@@ -171,13 +171,9 @@ _default:_ `process.cwd()`
 This plugin does not connect to the database or scan a schema folder, instead naively
 parsing select or returning clauses to figure out potential response types.
 
-In a real TypeScript project you should probably still roll your own types?
-
-And JavaScript projects still get the benefits of completions.
-
 ## SvelteKit use case
 
-I primarily use this in a SvelteKit project. The only thing I modify is setting `typesFolder` to `'.svelte-kit/types'` directory, and adding a `".svelte-kit/types/**/*.sql.d.ts"` record to my `include` array in `tsconfig.json`.
+I primarily use this in a SvelteKit project. The only thing I modify is setting `typesFolder` to `'src/sql-types/'` directory, and adding a `"src/sql-types/**/*.sql.d.ts"` strang to my `include` array in `tsconfig.json`.
 
 Also, when using SvelteKit aliases you can absolutely shove all your sql modules in a `src/sql` directory with a `$sql` alias and have module declarations generated for all of the files! Works automagically out of the box.
 
