@@ -15,13 +15,88 @@ export function* parseModule(/** @type {string} */ sql) {
 			.split(/;\s*$/m)
 			.map((s) => s.trim())
 			.filter(Boolean);
+		let queryStart = rema.index + rema[0].length;
+		while (queryStart < sql.length && /\s/.test(sql[queryStart])) queryStart++;
+		const pos = lineCol(sql, queryStart);
 		if (rest.length > 0) {
-			const firstMeta = metadata(first);
+			const firstMeta = Object.assign(metadata(first), { srcLine: pos.line, srcCol: pos.column });
 			yield [firstMeta, ...rest.map((r) => metadata(r, firstMeta))];
 		} else {
-			yield metadata(first);
+			yield Object.assign(metadata(first), { srcLine: pos.line, srcCol: pos.column });
 		}
 	}
+}
+
+function lineCol(/** @type {string} */ text, /** @type {number} */ index) {
+	let line = 0;
+	let lineStart = 0;
+	for (let i = 0; i < index; ++i) {
+		if (text.charCodeAt(i) === 10) {
+			line++;
+			lineStart = i + 1;
+		}
+	}
+	return { line, column: index - lineStart };
+}
+
+const b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function vlq(/** @type {number} */ n) {
+	let v = n < 0 ? (-n << 1) | 1 : n << 1;
+	let out = "";
+	do {
+		let digit = v & 31;
+		v >>>= 5;
+		if (v) digit |= 32;
+		out += b64[digit];
+	} while (v);
+	return out;
+}
+
+/** @param {{genLine: number, genCol: number, srcIdx?: number, srcLine: number, srcCol: number}[]} mappings */
+export function encodeMappings(mappings) {
+	mappings = mappings.toSorted((a, b) => a.genLine - b.genLine || a.genCol - b.genCol);
+	let out = "";
+	let prevGenLine = 0, prevGenCol = 0, prevSrcIdx = 0, prevSrcLine = 0, prevSrcCol = 0;
+	for (const m of mappings) {
+		if (m.genLine > prevGenLine) {
+			out += ";".repeat(m.genLine - prevGenLine);
+			prevGenLine = m.genLine;
+			prevGenCol = 0;
+		} else if (out) {
+			out += ",";
+		}
+		const srcIdx = m.srcIdx ?? 0;
+		out += vlq(m.genCol - prevGenCol) + vlq(srcIdx - prevSrcIdx) + vlq(m.srcLine - prevSrcLine) + vlq(m.srcCol - prevSrcCol);
+		prevGenCol = m.genCol;
+		prevSrcIdx = srcIdx;
+		prevSrcLine = m.srcLine;
+		prevSrcCol = m.srcCol;
+	}
+	return out;
+}
+
+/**
+ * Locates each module's export declaration in generated text and maps it back to its source position.
+ * @param {string} text
+ * @param {{name: string, srcLine: number, srcCol: number}[]} moduleMappings
+ */
+export function exportMappings(text, moduleMappings, srcIdx = 0, lineOffset = 0) {
+	const out = [];
+	for (const m of moduleMappings) {
+		for (const decl of [`export function ${m.name}`, `export const ${m.name}`, `export async function* ${m.name}`]) {
+			let i = text.indexOf(decl);
+			while (i >= 0 && /[\w$]/.test(text[i + decl.length] ?? "")) {
+				i = text.indexOf(decl, i + 1);
+			}
+			if (i >= 0) {
+				const pos = lineCol(text, i + decl.length - m.name.length);
+				out.push({ genLine: pos.line + lineOffset, genCol: pos.column, srcIdx, srcLine: m.srcLine, srcCol: m.srcCol });
+				break;
+			}
+		}
+	}
+	return out;
 }
 
 function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata>} */ firstMeta = undefined) {
@@ -97,6 +172,7 @@ export function codegen(
 		`import type { QueryResultRow, QueryResult, QueryArrayResult } from 'pg';\nimport { Queryable } from 'vite-plugin-postgres-import';`,
 	];
 	let js = [`import { escapeLiteral } from 'pg';`];
+	const mappings = [];
 
 	for (let module of modules) {
 		module = Array.isArray(module)
@@ -118,6 +194,8 @@ export function codegen(
 		if (!module.rowArray) {
 			module.returnSymbols = module.returnSymbols.map((rs) => [...new Set(rs)]);
 		}
+
+		mappings.push({ name: module.name, srcLine: module.srcLine ?? 0, srcCol: module.srcCol ?? 0 });
 
 		if (module.mode) {
 			dts[0] += `\nimport Cursor from 'pg-cursor';`;
@@ -237,12 +315,12 @@ export function ${module.name}<${module.returnSymbols
 		);
 	}
 
-	const match = aliases[filename] ?? aliases[partial].find(({ path }) => filename.startsWith(path));
+	const match = aliases?.[filename] ?? aliases?.[partial]?.find(({ path }) => filename.startsWith(path));
 	let moduleDeclaration = [];
 	if (match) {
 		const mod = "path" in match ? match.alias + filename.replace(match.path, "") : match.alias;
 		moduleDeclaration.push(`declare module "${mod}" {`, dts[0], ...dts.slice(1), `}`);
 	}
 
-	return { js: js.join("\n"), dts: dts.join("\n\n") + "\n", moduleDeclaration };
+	return { js: js.join("\n"), dts: dts.join("\n\n") + "\n", moduleDeclaration, mappings };
 }

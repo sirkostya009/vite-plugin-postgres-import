@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { codegen, parseModule } from "./parse.js";
+import { codegen, encodeMappings, exportMappings, parseModule } from "./parse.js";
 
 /** @returns {import('vite').Plugin} */
 export default async function postgres({
@@ -47,18 +47,69 @@ export default async function postgres({
 		}
 		const filename = path.relative(rootFolder, id);
 
-		const { js, dts, moduleDeclaration } = codegen(parseModule(sql), filename, aliases);
+		const { js, dts, moduleDeclaration, mappings } = codegen(parseModule(sql), filename, aliases);
 
 		const dtsFolder = path.join(typesFolder, path.relative(rootFolder, path.dirname(id)));
+		const dtsName = path.basename(filename, ".sql") + ".sql.d.ts";
 		await fs.mkdir(dtsFolder, { recursive: true });
-		await fs.writeFile(path.join(dtsFolder, path.basename(filename, ".sql") + ".sql.d.ts"), dts);
+		await fs.writeFile(
+			path.join(dtsFolder, dtsName),
+			dts + `//# sourceMappingURL=${dtsName}.map\n`
+		);
+		await fs.writeFile(
+			path.join(dtsFolder, dtsName + ".map"),
+			JSON.stringify({
+				version: 3,
+				file: dtsName,
+				sources: [path.relative(dtsFolder, id).replaceAll(path.sep, "/")],
+				names: [],
+				mappings: encodeMappings([
+					{ genLine: 0, genCol: 0, srcLine: 0, srcCol: 0 },
+					...exportMappings(dts, mappings),
+				]),
+			})
+		);
 		if (moduleDeclaration.length) {
-			moduleDeclarations.set(filename, moduleDeclaration.join("\n"));
-			await fs.writeFile(path.join(typesFolder, "modules.sql.d.ts"), [...moduleDeclarations.values()].join("\n"));
+			moduleDeclarations.set(filename, { text: moduleDeclaration.join("\n"), mappings, id });
+			let line = 0;
+			const sources = [];
+			const combined = [];
+			const texts = [];
+			for (const { text, mappings, id } of moduleDeclarations.values()) {
+				const srcIdx = sources.push(path.relative(typesFolder, id).replaceAll(path.sep, "/")) - 1;
+				combined.push({ genLine: line, genCol: 0, srcIdx, srcLine: 0, srcCol: 0 });
+				combined.push(...exportMappings(text, mappings, srcIdx, line));
+				texts.push(text);
+				line += text.split("\n").length;
+			}
+			await fs.writeFile(
+				path.join(typesFolder, "modules.sql.d.ts"),
+				texts.join("\n") + "\n//# sourceMappingURL=modules.sql.d.ts.map\n"
+			);
+			await fs.writeFile(
+				path.join(typesFolder, "modules.sql.d.ts.map"),
+				JSON.stringify({
+					version: 3,
+					file: "modules.sql.d.ts",
+					sources,
+					names: [],
+					mappings: encodeMappings(combined),
+				})
+			);
 		}
 
 		return {
 			code: js,
+			map: {
+				version: 3,
+				sources: [id],
+				sourcesContent: [sql],
+				names: [],
+				mappings: encodeMappings([
+					{ genLine: 0, genCol: 0, srcLine: 0, srcCol: 0 },
+					...exportMappings(js, mappings),
+				]),
+			},
 			moduleType: "js",
 		};
 	}

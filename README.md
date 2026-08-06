@@ -166,6 +166,13 @@ Root folder relative to which path calculation will be happening. May be useful 
 
 _default:_ `process.cwd()`
 
+## Jump to source
+
+Generated `.d.ts` files ship with declaration maps pointing back at the original `.sql` file,
+so "Go to Definition" / "Go to Source Definition" on an imported function (or the import path itself) lands you
+on the query source itself. The vite transform also emits a sourcemap, so runtime stack traces
+and debugger stepping map back to the `.sql` source.
+
 ## What this plugin does NOT do
 
 This plugin does not connect to the database or scan a schema folder, instead naively
