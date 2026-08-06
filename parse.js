@@ -163,13 +163,21 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 export function codegen(
 	/** @type {Iterable<ReturnType<typeof metadata> | ReturnType<typeof metadata>[]>} */ modules,
 	/** @type {string} */ filename,
-	/** @type {string=} */ moduleName
+	/** @type {string=} */ moduleName,
+	/** @type {{module: string, export: string, type: "object" | "function"}} */ runtime = {
+		module: "#db-runtime",
+		export: "db",
+		type: "object",
+	}
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
 		`import type { QueryResultRow, QueryResult, QueryArrayResult } from 'pg';\nimport { Queryable } from 'vite-plugin-postgres-import';`,
 	];
-	let js = [`import { escapeLiteral } from 'pg';`];
+	let js = [
+		`import { escapeLiteral } from 'pg';\nimport { ${runtime.export} as __runtime } from '${runtime.module}';`,
+	];
+	const rt = runtime.type === "function" ? "__runtime()" : "__runtime";
 	const mappings = [];
 
 	for (let module of modules) {
@@ -195,9 +203,9 @@ export function codegen(
 
 		mappings.push({ name: module.name, srcLine: module.srcLine ?? 0, srcCol: module.srcCol ?? 0 });
 
-		if (module.mode) {
+		if (module.mode && !js[0].includes("pg-cursor")) {
 			dts[0] += `\nimport Cursor from 'pg-cursor';`;
-			js.push(`import Cursor from 'pg-cursor';`);
+			js[0] += `\nimport Cursor from 'pg-cursor';`;
 		}
 
 		const keys = module.params
@@ -224,9 +232,8 @@ export function ${module.name}<${module.returnSymbols
 					  }${r.length > 3 ? "\n" : " "}}`
 			)
 			.join(", ")}>(
-	tx: Queryable,${keys && `\n\tparams: Record<${keys}, unknown>,`}${
-			module.mode === ":iterable" ? `\n\tread?: number,` : ""
-		}
+	${keys ? `params: Record<${keys}, unknown>` : `params?: Record<string, never>`},
+	config?: { db?: Queryable${module.mode === ":iterable" ? "; read?: number" : ""} },
 ): ${
 			module.mode === ":cursor"
 				? `Cursor<R1>`
@@ -270,14 +277,12 @@ export function ${module.name}<${module.returnSymbols
 
 		js.push(
 			module.mode === ":cursor"
-				? `export const ${module.name} = async (tx${
-						paramsString && `, { ${paramsString} } = {}`
-				  }) => (await tx).query(new Cursor(\`${module.query}\`${paramsString && `, [ ${paramsString} ]`}${
-						module.rowArray ? `, { rowMode: "array" }` : ""
-				  }));`
+				? `export const ${module.name} = async ({ ${paramsString} } = {}, { db: __db = ${rt} } = {}) => (await __db).query(new Cursor(\`${
+						module.query
+				  }\`${paramsString && `, [ ${paramsString} ]`}${module.rowArray ? `, { rowMode: "array" }` : ""}));`
 				: module.mode === ":iterable"
-				? `export async function* ${module.name}(tx, ${paramsString && `{ ${paramsString} } = {}, `}read = 10) {
-	const cursor = (await tx).query(new Cursor(\`${module.query}\`${paramsString && `, [ ${paramsString} ]`}${
+				? `export async function* ${module.name}({ ${paramsString} } = {}, { db: __db = ${rt}, read = 10 } = {}) {
+	const cursor = (await __db).query(new Cursor(\`${module.query}\`${paramsString && `, [ ${paramsString} ]`}${
 						module.rowArray ? `, { rowMode: "array" }` : ""
 				  }));
 	try {
@@ -290,10 +295,10 @@ export function ${module.name}<${module.returnSymbols
 		await cursor.close();
 	}
 }`
-				: `export const ${module.name} = async (tx, { ${paramsString} } = {}) => (await tx).query({
+				: `export const ${module.name} = async ({ ${paramsString} } = {}, { db: __db = ${rt} } = {}) => (await __db).query({
 	${module.prepared ? `name: "${module.name}",` : ""}
-	text: \`${module.multiStatement ? module.query : module.query}\`,
-	values: [ ${module.multiStatement || paramsString} ],
+	text: \`${module.query}\`,
+	${module.multiStatement ? "" : `values: [ ${paramsString} ],`}
 	${module.rowArray ? `rowMode: "array",` : ""}
 }).then((${module.multiStatement && "["}${module.returnSymbols.map((_, i) => `r${i + 1}`).join()}${
 						module.multiStatement && "]"

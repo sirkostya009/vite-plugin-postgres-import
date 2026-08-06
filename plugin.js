@@ -6,7 +6,9 @@ import { codegen, encodeMappings, exportMappings, parseModule } from "./parse.js
 export default async function postgres({
 	typesFolder = "node_modules/@types/vite-plugin-postgres-import/",
 	rootFolder = process.cwd(),
+	runtime: { module: runtimeModule = "#db-runtime", export: runtimeExport = "db", type: runtimeType = "object" } = {},
 } = {}) {
+	const runtime = { module: runtimeModule, export: runtimeExport, type: runtimeType };
 	const imports = await fs
 		.readFile(path.join(rootFolder, "package.json"), "utf8")
 		.then((s) => JSON.parse(s).imports)
@@ -75,15 +77,17 @@ export default async function postgres({
 		}
 		const filename = path.relative(rootFolder, id);
 
-		const { js, dts, moduleDeclaration, mappings } = codegen(parseModule(sql), filename, moduleName(filename));
+		const { js, dts, moduleDeclaration, mappings } = codegen(
+			parseModule(sql),
+			filename,
+			moduleName(filename),
+			runtime,
+		);
 
 		const dtsFolder = path.join(typesFolder, path.relative(rootFolder, path.dirname(id)));
 		const dtsName = path.basename(filename, ".sql") + ".sql.d.ts";
 		await fs.mkdir(dtsFolder, { recursive: true });
-		await fs.writeFile(
-			path.join(dtsFolder, dtsName),
-			dts + `//# sourceMappingURL=${dtsName}.map\n`
-		);
+		await fs.writeFile(path.join(dtsFolder, dtsName), dts + `//# sourceMappingURL=${dtsName}.map\n`);
 		await fs.writeFile(
 			path.join(dtsFolder, dtsName + ".map"),
 			JSON.stringify({
@@ -95,7 +99,7 @@ export default async function postgres({
 					{ genLine: 0, genCol: 0, srcLine: 0, srcCol: 0 },
 					...exportMappings(dts, mappings),
 				]),
-			})
+			}),
 		);
 		if (moduleDeclaration.length) {
 			moduleDeclarations.set(filename, { text: moduleDeclaration.join("\n"), mappings, id });
@@ -112,7 +116,7 @@ export default async function postgres({
 			}
 			await fs.writeFile(
 				path.join(typesFolder, "modules.sql.d.ts"),
-				texts.join("\n") + "\n//# sourceMappingURL=modules.sql.d.ts.map\n"
+				texts.join("\n") + "\n//# sourceMappingURL=modules.sql.d.ts.map\n",
 			);
 			await fs.writeFile(
 				path.join(typesFolder, "modules.sql.d.ts.map"),
@@ -122,7 +126,7 @@ export default async function postgres({
 					sources,
 					names: [],
 					mappings: encodeMappings(combined),
-				})
+				}),
 			);
 		}
 

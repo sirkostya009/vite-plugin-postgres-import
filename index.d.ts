@@ -22,6 +22,29 @@ export default function postgres(opts?: {
 	 * @default process.cwd()
 	 */
 	rootFolder?: string;
+	/**
+	 * Where the default runtime comes from.
+	 */
+	runtime?: {
+		/**
+		 * Module specifier the default runtime is imported from in every generated module.
+		 *
+		 * @default "#db-runtime"
+		 */
+		module?: string;
+		/**
+		 * Named export of `module` providing the default runtime.
+		 *
+		 * @default "db"
+		 */
+		export?: string;
+		/**
+		 * Whether the export is a `Queryable` itself or a function returning one (possibly async).
+		 *
+		 * @default "object"
+		 */
+		type?: "object" | "function";
+	};
 }): Plugin;
 
 export interface QueryableObject {

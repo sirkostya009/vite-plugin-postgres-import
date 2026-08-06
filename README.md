@@ -37,22 +37,30 @@ delete from t
 where foo = :foo;
 ```
 
-`usage.js`:
+`db-runtime.js` (the default runtime, should be mapped to `#db-runtime` via [subpath imports](https://nodejs.org/api/packages.html#subpath-imports)):
 
 ```js
 import { Pool } from "pg";
+
+export const db = new Pool("...");
+```
+
+`usage.js`:
+
+```js
 import { Query, UpdateQuery, QueryMany, MultiStatement } from "./module.sql";
 
-const pool = new Pool("...");
+const { id } = await Query({ id: 1 });
 
-const { id } = await Query(pool, { id: 1 });
+const rowsUpdated = await UpdateQuery({ id: 1, newFoo: "bar" });
 
-const rowsUpdated = await UpdateQuery(pool, { id: 1, newFoo: "bar" });
-
-const array = await QueryMany(pool);
+const array = await QueryMany();
 
 // array, object, number respectively
-const [all, something, deleted] = await MultiStatement(pool, { foo: "bar" });
+const [all, something, deleted] = await MultiStatement({ foo: "bar" });
+
+// override the runtime per call, e.g. to run inside a transaction
+const rowsUpdated = await UpdateQuery({ id: 1, newFoo: "baz" }, { db: tx });
 ```
 
 > [!Warning]
@@ -67,19 +75,19 @@ The only 4 sqlc annotations that are available are the following:
 
 -   `:execresult` - default if neither of the 3 below are provided, returns `QueryResult`.
 
-    ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<QueryResult<R>>`
+    ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<QueryResult<R>>`
 
 -   `:one` - returns template argument, or the default-parsed ones from the select/returning clause.
 
-    ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<R>`
+    ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<R>`
 
 -   `:many` - returns template argument as an array, or the default-parsed ones from the select/returning clause.
 
-    ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<R[]>`
+    ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<R[]>`
 
 -   `:execrows` - returns number of affected rows.
 
-    ex.: `Query(c): Promise<number>`
+    ex.: `Query(params?, config?): Promise<number>`
 
 4 additional annotations not found in sqlc are available:
 
@@ -117,25 +125,25 @@ The only 4 sqlc annotations that are available are the following:
 > import { One as AnotherOne } from "./another-one.sql";
 >
 > // definitely don't do this
-> await One(c);
-> await AnotherOne(c, { id: ... });
+> await One();
+> await AnotherOne({ id: ... });
 > ```
 >
 > At best, you'd get an error in the provided example, due to mismatch in provided values, and at worst, assuming different examples, you'd be getting obscure bugs related to incorrect data.
 
 -   `:array` - sets `rowMode` to `'array'`. Modifies to type declarations accordingly:
 
-    ex. `:execresult`: `Query<R extends any[] = [ ... ]>(c): Promise<QueryArrayResult<R>>`
+    ex. `:execresult`: `Query<R extends any[] = [ ... ]>(params?, config?): Promise<QueryArrayResult<R>>`
 
-    ex. `:one`: `Query<R extends any[] = [ ... ]>(c): Promise<R>`
+    ex. `:one`: `Query<R extends any[] = [ ... ]>(params?, config?): Promise<R>`
 
-    ex. `:many`: `Query<R extends any[] = [ ... ]>(c): Promise<R[]>`
+    ex. `:many`: `Query<R extends any[] = [ ... ]>(params?, config?): Promise<R[]>`
 
 -   `:iterable` - returns an `AsyncGenerator`. Once [Async Iterator Helpers](https://github.com/tc39/proposal-async-iterator-helpers)
     are in the standard, you can use crazy piping as following:
 
 ```js
-const result = await IterableQuery<{ ... }>(c, { foo: 'bar' })
+const result = await IterableQuery<{ ... }>({ foo: 'bar' })
     .flatMap(superComplicatedCodeThatIsMoreUsefulToRunFromJS)
     .filter(Boolean)
     .toArray();
@@ -146,9 +154,9 @@ some of that computation to JS, you can finally do that! Or at least when that p
 
 -   `:cursor` - returns an `Cursor`
 
-ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<Cursor<R>>`
+ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<Cursor<R>>`
 
-    ex. `:array`: `Query<R extends any[] = [ ... ]>(c): Promise<Cursor<R>>`
+    ex. `:array`: `Query<R extends any[] = [ ... ]>(params?, config?): Promise<Cursor<R>>`
 
 ## Configuring
 
@@ -165,6 +173,16 @@ _default:_ `'node_modules/@types/vite-plugin-postgres-import/'`
 Root folder relative to which path calculation will be happening. May be useful for some I guess.
 
 _default:_ `process.cwd()`
+
+### `runtime`
+
+Where the default runtime comes from:
+
+-   `module` - specifier every generated module imports the runtime from. Point it at a module of yours
+    (typically via a subpath import) that provides the database connection. _default:_ `'#db-runtime'`
+-   `export` - named export of `module` holding the runtime. _default:_ `'db'`
+-   `type` - either `'object'` — the export is a `Queryable` (or a promise of one) — or `'function'` — the export
+    is called on each query invocation and returns a `Queryable` (or a promise of one). _default:_ `'object'`
 
 ## Import aliases
 
