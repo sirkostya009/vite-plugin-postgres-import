@@ -1,7 +1,5 @@
 const annotationRegex = /--\s*name:\s*(?<name>[a-zA-Z][\w_]*)\s*(?<tags>(:\w+\s*)*)?\r?\n/g;
 
-const partial = Symbol();
-
 export function* parseModule(/** @type {string} */ sql) {
 	annotationRegex.lastIndex = 0;
 
@@ -165,7 +163,7 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 export function codegen(
 	/** @type {Iterable<ReturnType<typeof metadata> | ReturnType<typeof metadata>[]>} */ modules,
 	/** @type {string} */ filename,
-	/** @type {Awaited<ReturnType<typeof parseLocalSvelteConfigAliases>>} */ aliases
+	/** @type {string=} */ moduleName
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
@@ -315,11 +313,9 @@ export function ${module.name}<${module.returnSymbols
 		);
 	}
 
-	const match = aliases?.[filename] ?? aliases?.[partial]?.find(({ path }) => filename.startsWith(path));
 	let moduleDeclaration = [];
-	if (match) {
-		const mod = "path" in match ? match.alias + filename.replace(match.path, "") : match.alias;
-		moduleDeclaration.push(`declare module "${mod}" {`, dts[0], ...dts.slice(1), `}`);
+	if (moduleName) {
+		moduleDeclaration.push(`declare module "${moduleName}" {`, dts[0], ...dts.slice(1), `}`);
 	}
 
 	return { js: js.join("\n"), dts: dts.join("\n\n") + "\n", moduleDeclaration, mappings };

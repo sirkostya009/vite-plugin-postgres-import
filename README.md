@@ -156,7 +156,7 @@ ex.: `Query<R extends QueryResultRow = { ... }>(c): Promise<Cursor<R>>`
 
 Path to a folder where all declaration are kept relative to `rootFolder`, i.e.
 a file at path `src/sql/module.sql` will have its `.d.ts` file generated into `${typesFolder}/src/sql/module.sql.d.ts`.
-Make sure you include this one in your `tsconfig.json` as `"${typesFolder}/**/*.sql.d.ts"`.
+Make sure you include this one in your tsconfig's `rootDirs` array as `"${typesFolder}/**/*.sql.d.ts"`.
 
 _default:_ `'node_modules/@types/vite-plugin-postgres-import/'`
 
@@ -165,6 +165,22 @@ _default:_ `'node_modules/@types/vite-plugin-postgres-import/'`
 Root folder relative to which path calculation will be happening. May be useful for some I guess.
 
 _default:_ `process.cwd()`
+
+## Import aliases
+
+If your `package.json` declares [subpath imports](https://nodejs.org/api/packages.html#subpath-imports),
+matching `.sql` files get ambient module declarations generated for their aliased paths:
+
+```json
+{
+	"imports": {
+		"#sql/*": "./src/sql/*"
+	}
+}
+```
+
+With that, `import { Query } from "#sql/module.sql"` is fully typed — declarations land in `${typesFolder}/modules.sql.d.ts`.
+Exact and conditional (`{ "node": ..., "default": ... }`) targets are supported too.
 
 ## Jump to source
 
@@ -177,12 +193,6 @@ and debugger stepping map back to the `.sql` source.
 
 This plugin does not connect to the database or scan a schema folder, instead naively
 parsing select or returning clauses to figure out potential response types.
-
-## SvelteKit use case
-
-I primarily use this in a SvelteKit project. The only thing I modify is setting `typesFolder` to `'src/sql-types/'` directory, and adding a `"src/sql-types/**/*.sql.d.ts"` strang to my `include` array in `tsconfig.json`.
-
-Also, when using SvelteKit aliases you can absolutely shove all your sql modules in a `src/sql` directory with a `$sql` alias and have module declarations generated for all of the files! Works automagically out of the box.
 
 ## License
 

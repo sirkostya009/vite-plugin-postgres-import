@@ -7,9 +7,37 @@ export default async function postgres({
 	typesFolder = "node_modules/@types/vite-plugin-postgres-import/",
 	rootFolder = process.cwd(),
 } = {}) {
-	const aliases = await import("@sveltejs/load-config").then((r) => r.loadConfig(rootFolder)).catch(() => null);
+	const imports = await fs
+		.readFile(path.join(rootFolder, "package.json"), "utf8")
+		.then((s) => JSON.parse(s).imports)
+		.catch(() => null);
 
 	const moduleDeclarations = new Map();
+
+	function* targets(/** @type {unknown} */ value) {
+		if (typeof value === "string") yield value;
+		else if (Array.isArray(value)) for (const v of value) yield* targets(v);
+		else if (value) for (const v of Object.values(value)) yield* targets(v);
+	}
+
+	function moduleName(/** @type {string} */ filename) {
+		const rel = filename.replaceAll(path.sep, "/");
+		for (const [key, value] of Object.entries(imports ?? {})) {
+			for (let target of targets(value)) {
+				target = target.replace(/^\.\//, "");
+				const star = target.indexOf("*");
+				if (star < 0) {
+					if (target === rel) return key;
+					continue;
+				}
+				const prefix = target.substring(0, star);
+				const suffix = target.substring(star + 1);
+				if (rel.length >= prefix.length + suffix.length && rel.startsWith(prefix) && rel.endsWith(suffix)) {
+					return key.replace("*", rel.substring(prefix.length, rel.length - suffix.length));
+				}
+			}
+		}
+	}
 
 	return {
 		name: "vite-plugin-sql-postgres",
@@ -47,7 +75,7 @@ export default async function postgres({
 		}
 		const filename = path.relative(rootFolder, id);
 
-		const { js, dts, moduleDeclaration, mappings } = codegen(parseModule(sql), filename, aliases);
+		const { js, dts, moduleDeclaration, mappings } = codegen(parseModule(sql), filename, moduleName(filename));
 
 		const dtsFolder = path.join(typesFolder, path.relative(rootFolder, path.dirname(id)));
 		const dtsName = path.basename(filename, ".sql") + ".sql.d.ts";
