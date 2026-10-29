@@ -2,12 +2,46 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { codegen, encodeMappings, exportMappings, parseModule } from "./parse.js";
 
-/** @returns {import('vite').Plugin} */
-export default async function postgres({
-	typesFolder = "node_modules/@types/vite-plugin-postgres-import/",
-	rootFolder = process.cwd(),
-	runtime: { module: runtimeModule = "#db-runtime", export: runtimeExport = "db", type: runtimeType = "object" } = {},
-} = {}) {
+/**
+ * @import { QueryArrayConfig, QueryArrayResult, QueryConfig, QueryConfigValues, QueryResult, QueryResultRow, Submittable } from "pg"
+ * @import { Plugin, TransformResult } from "vite"
+ */
+
+/**
+ * @typedef {{
+ *   query<T extends Submittable>(queryStream: T): T;
+ *   query<R extends any[] = any[], I = any[]>(queryConfig: QueryArrayConfig<I>, values?: QueryConfigValues<I>): Promise<QueryArrayResult<R>>;
+ *   query<R extends QueryResultRow = any, I = any>(queryConfig: QueryConfig<I>): Promise<QueryResult<R>>;
+ *   query<R extends QueryResultRow = any, I = any[]>(queryTextOrConfig: string | QueryConfig<I>, values?: QueryConfigValues<I>): Promise<QueryResult<R>>;
+ * }} QueryableObject
+ */
+
+/** @typedef {QueryableObject | Promise<QueryableObject>} Queryable */
+
+/**
+ * @typedef {object} PostgresOptions
+ * @property {string} [typesFolder] Path to a folder where all declaration are kept relative to `rootFolder`, i.e. a file at path `src/sql/module.sql` will have its `.d.ts` file generated into `${typesFolder}/src/sql/module.sql.d.ts`. Make sure you include this one in your `tsconfig.json`. Defaults to `"node_modules/@types/vite-plugin-postgres-import/"`.
+ * @property {string} [rootFolder] Root folder relative to which path calculation will be happening. Defaults to `process.cwd()`.
+ * @property {RuntimeOptions} [runtime] Where the default runtime comes from.
+ */
+
+/**
+ * @typedef {object} RuntimeOptions
+ * @property {string} [module] Module specifier the default runtime is imported from in every generated module. Defaults to `"#db-runtime"`.
+ * @property {string} [export] Named export of `module` providing the default runtime. Defaults to `"db"`.
+ * @property {"object" | "function"} [type] Whether the export is a `Queryable` itself or a function returning one (possibly async). Defaults to `"object"`.
+ */
+
+/**
+ * @param {PostgresOptions} [opts]
+ * @returns {Promise<Plugin>}
+ */
+export default async function postgres(opts = {}) {
+	const {
+		typesFolder = "node_modules/@types/vite-plugin-postgres-import/",
+		rootFolder = process.cwd(),
+		runtime: { module: runtimeModule = "#db-runtime", export: runtimeExport = "db", type: runtimeType = "object" } = {},
+	} = opts;
 	const runtime = { module: runtimeModule, export: runtimeExport, type: runtimeType };
 	const imports = await fs
 		.readFile(path.join(rootFolder, "package.json"), "utf8")
@@ -70,7 +104,7 @@ export default async function postgres({
 		},
 	};
 
-	/** @returns {Promise<import("vite").TransformResult>} */
+	/** @returns {Promise<TransformResult | undefined>} */
 	async function transform(/** @type {string} */ sql, /** @type {string} */ id) {
 		if (!/\.sql$/.test(id)) {
 			return;

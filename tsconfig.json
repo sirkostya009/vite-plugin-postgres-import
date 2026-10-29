@@ -1,0 +1,14 @@
+{
+	"files": ["plugin.js"],
+	"compilerOptions": {
+		"allowJs": true,
+		"checkJs": false,
+		"declaration": true,
+		"declarationMap": true,
+		"emitDeclarationOnly": true,
+		"module": "nodenext",
+		"target": "esnext",
+		"skipLibCheck": true,
+		"strict": true
+	}
+}
