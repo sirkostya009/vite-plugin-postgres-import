@@ -1,10 +1,27 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { describer } from "./describe.js";
 import { codegen, encodeMappings, exportMappings, parseModule } from "./parse.js";
 
 /**
- * @import { QueryArrayConfig, QueryArrayResult, QueryConfig, QueryConfigValues, QueryResult, QueryResultRow, Submittable } from "pg"
+ * @import { ClientConfig, QueryArrayConfig, QueryArrayResult, QueryConfig, QueryConfigValues, QueryResult, QueryResultRow, Submittable } from "pg"
  * @import { Plugin, TransformResult } from "vite"
+ */
+
+/**
+ * Value pg parses `interval` columns into.
+ * @typedef {{
+ *   years?: number;
+ *   months?: number;
+ *   days?: number;
+ *   hours?: number;
+ *   minutes?: number;
+ *   seconds?: number;
+ *   milliseconds?: number;
+ *   toPostgres(): string;
+ *   toISO(): string;
+ *   toISOString(): string;
+ * }} Interval
  */
 
 /**
@@ -23,6 +40,8 @@ import { codegen, encodeMappings, exportMappings, parseModule } from "./parse.js
  * @property {string} [typesFolder] Path to a folder where all declaration are kept relative to `rootFolder`, i.e. a file at path `src/sql/module.sql` will have its `.d.ts` file generated into `${typesFolder}/src/sql/module.sql.d.ts`. Make sure you include this one in your `tsconfig.json`. Defaults to `"node_modules/@types/vite-plugin-postgres-import/"`.
  * @property {string} [rootFolder] Root folder relative to which path calculation will be happening. Defaults to `process.cwd()`.
  * @property {RuntimeOptions} [runtime] Where the default runtime comes from.
+ * @property {boolean | string | ClientConfig} [describe] Type params and result columns by describing every query against a live database, only ever done by the dev server. `true` connects using the `PG*` environment variables, a connection string or `pg` client config may be given instead. Defaults to `false`.
+ * @property {Record<string, string | { input?: string, output?: string }>} [typesOverrides] TypeScript types to use for postgres types when `describe` is enabled, keyed by type name (`int8`, `public.mood`, `int8[]`). A string applies to both params (`input`) and columns (`output`).
  */
 
 /**
@@ -41,8 +60,12 @@ export default async function postgres(opts = {}) {
 		typesFolder = "node_modules/@types/vite-plugin-postgres-import/",
 		rootFolder = process.cwd(),
 		runtime: { module: runtimeModule = "#db-runtime", export: runtimeExport = "db", type: runtimeType = "object" } = {},
+		describe = false,
+		typesOverrides,
 	} = opts;
 	const runtime = { module: runtimeModule, export: runtimeExport, type: runtimeType };
+	const db = describe ? describer(describe, typesOverrides) : undefined;
+	let dev = false;
 	const imports = await fs
 		.readFile(path.join(rootFolder, "package.json"), "utf8")
 		.then((s) => JSON.parse(s).imports)
@@ -77,6 +100,9 @@ export default async function postgres(opts = {}) {
 
 	return {
 		name: "vite-plugin-sql-postgres",
+		configResolved(config) {
+			dev = config.command === "serve" && config.mode !== "test";
+		},
 		transform: {
 			filter: {
 				id: /\.sql$/,
@@ -102,6 +128,9 @@ export default async function postgres(opts = {}) {
 		handleHotUpdate({ modules }) {
 			return modules;
 		},
+		buildEnd() {
+			db?.end();
+		},
 	};
 
 	/** @returns {Promise<TransformResult | undefined>} */
@@ -111,57 +140,63 @@ export default async function postgres(opts = {}) {
 		}
 		const filename = path.relative(rootFolder, id);
 
+		const modules = parseModule(sql).toArray();
+		if (dev) await db?.annotate(modules, filename);
+
 		const { js, dts, moduleDeclaration, mappings } = codegen(
-			parseModule(sql),
+			modules,
 			filename,
 			moduleName(filename),
 			runtime,
 		);
 
-		const dtsFolder = path.join(typesFolder, path.relative(rootFolder, path.dirname(id)));
-		const dtsName = path.basename(filename, ".sql") + ".sql.d.ts";
-		await fs.mkdir(dtsFolder, { recursive: true });
-		await fs.writeFile(path.join(dtsFolder, dtsName), dts + `//# sourceMappingURL=${dtsName}.map\n`);
-		await fs.writeFile(
-			path.join(dtsFolder, dtsName + ".map"),
-			JSON.stringify({
-				version: 3,
-				file: dtsName,
-				sources: [path.relative(dtsFolder, id).replaceAll(path.sep, "/")],
-				names: [],
-				mappings: encodeMappings([
-					{ genLine: 0, genCol: 0, srcLine: 0, srcCol: 0 },
-					...exportMappings(dts, mappings),
-				]),
-			}),
-		);
-		if (moduleDeclaration.length) {
-			moduleDeclarations.set(filename, { text: moduleDeclaration.join("\n"), mappings, id });
-			let line = 0;
-			const sources = [];
-			const combined = [];
-			const texts = [];
-			for (const { text, mappings, id } of moduleDeclarations.values()) {
-				const srcIdx = sources.push(path.relative(typesFolder, id).replaceAll(path.sep, "/")) - 1;
-				combined.push({ genLine: line, genCol: 0, srcIdx, srcLine: 0, srcCol: 0 });
-				combined.push(...exportMappings(text, mappings, srcIdx, line));
-				texts.push(text);
-				line += text.split("\n").length;
-			}
+		// described types must not be overwritten by naive ones outside of dev
+		if (!db || dev) {
+			const dtsFolder = path.join(typesFolder, path.relative(rootFolder, path.dirname(id)));
+			const dtsName = path.basename(filename, ".sql") + ".sql.d.ts";
+			await fs.mkdir(dtsFolder, { recursive: true });
+			await fs.writeFile(path.join(dtsFolder, dtsName), dts + `//# sourceMappingURL=${dtsName}.map\n`);
 			await fs.writeFile(
-				path.join(typesFolder, "modules.sql.d.ts"),
-				texts.join("\n") + "\n//# sourceMappingURL=modules.sql.d.ts.map\n",
-			);
-			await fs.writeFile(
-				path.join(typesFolder, "modules.sql.d.ts.map"),
+				path.join(dtsFolder, dtsName + ".map"),
 				JSON.stringify({
 					version: 3,
-					file: "modules.sql.d.ts",
-					sources,
+					file: dtsName,
+					sources: [path.relative(dtsFolder, id).replaceAll(path.sep, "/")],
 					names: [],
-					mappings: encodeMappings(combined),
+					mappings: encodeMappings([
+						{ genLine: 0, genCol: 0, srcLine: 0, srcCol: 0 },
+						...exportMappings(dts, mappings),
+					]),
 				}),
 			);
+			if (moduleDeclaration.length) {
+				moduleDeclarations.set(filename, { text: moduleDeclaration.join("\n"), mappings, id });
+				let line = 0;
+				const sources = [];
+				const combined = [];
+				const texts = [];
+				for (const { text, mappings, id } of moduleDeclarations.values()) {
+					const srcIdx = sources.push(path.relative(typesFolder, id).replaceAll(path.sep, "/")) - 1;
+					combined.push({ genLine: line, genCol: 0, srcIdx, srcLine: 0, srcCol: 0 });
+					combined.push(...exportMappings(text, mappings, srcIdx, line));
+					texts.push(text);
+					line += text.split("\n").length;
+				}
+				await fs.writeFile(
+					path.join(typesFolder, "modules.sql.d.ts"),
+					texts.join("\n") + "\n//# sourceMappingURL=modules.sql.d.ts.map\n",
+				);
+				await fs.writeFile(
+					path.join(typesFolder, "modules.sql.d.ts.map"),
+					JSON.stringify({
+						version: 3,
+						file: "modules.sql.d.ts",
+						sources,
+						names: [],
+						mappings: encodeMappings(combined),
+					}),
+				);
+			}
 		}
 
 		return {

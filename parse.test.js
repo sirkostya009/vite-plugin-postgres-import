@@ -150,3 +150,79 @@ test("test cursor query", (t) => {
 	// console.log("==========================");
 	// console.log("codegen dts", dts);
 });
+
+const requiredParamsQuery = `
+-- name: Required :one
+select id
+from t
+where id = :id! and idx = :idx and foo = :foo!= 1;
+`;
+
+test("test required params", (t) => {
+	const [module] = unit.parseModule(requiredParamsQuery).toArray();
+	t.assert.deepEqual([...module.params], ["id", "idx", "foo"]);
+	t.assert.deepEqual([...module.required], ["id"]);
+
+	const { js, dts } = unit.codegen([module], "test.sql");
+	t.assert.match(js, /where id = \$1 and idx = \$2 and foo = \$3!= 1/);
+	t.assert.match(dts, /params: \{ id: \{\}; idx: unknown; foo: unknown \}/);
+
+	module.paramTypes = new Map([["id", "number"], ["idx", "number"], ["foo", "string"]]);
+	module.columns = [["id", "number"]];
+	t.assert.match(unit.codegen([module], "test.sql").dts, /params: \{ id: number; idx\?: number \| null; foo\?: string \| null \}/);
+	module.required.clear();
+	t.assert.match(unit.codegen([module], "test.sql").dts, /params\?: \{ id\?: number \| null;/);
+	t.assert.match(unit.codegen([module], "test.sql").dts, /R1 extends QueryResultRow = \{ id: number \}/);
+});
+
+const hintsQuery = `
+-- name: Hints :one
+select count(*) as "total!", bio AS "bio?", 'a?"' as quoted
+from t;
+`;
+
+test("test nullability hints", (t) => {
+	const [module] = unit.parseModule(hintsQuery).toArray();
+	t.assert.deepEqual([...module.hints], [["total", "!"], ["bio", "?"]]);
+	t.assert.deepEqual(module.selectFields.slice(0, 2), ['"total"', '"bio"']);
+	t.assert.match(unit.codegen([module], "test.sql").js, /select count\(\*\) as "total", bio AS "bio", 'a\?"' as quoted/);
+});
+
+test("test param binding", (t) => {
+	t.assert.strictEqual(
+		unit.bindParams("a = :id and b = :ID and c = :id! and :pat!~ d and e != :x::int and f = '\\:no'", ["id", "ID", "pat", "x"]),
+		"a = $1 and b = $2 and c = $1 and $3!~ d and e != $4::int and f = '\\:no'",
+	);
+});
+
+const escapingQuery = `
+-- name: Escaping :one
+select count(*) as "total!"
+from t
+where name ~ '^\\d+$' and other = '\${x}' and :id::text = \`a\`
+order by "total!";
+`;
+
+test("test escaping and hint references", async (t) => {
+	const [module] = unit.parseModule(escapingQuery).toArray();
+	const { js } = unit.codegen([module], "test.sql");
+	const text = /text: `([\s\S]*?)`,\n/.exec(js)[1];
+	t.assert.strictEqual(
+		new Function(`return \`${text}\``)(),
+		"select count(*) as \"total\"\nfrom t\nwhere name ~ '^\\d+$' and other = '${x}' and $1::text = `a`\norder by \"total\"",
+	);
+});
+
+const multiParamsQuery = `
+-- name: MultiParams :one
+select 1 where :a = 'x';
+-- :one
+select 2 where :b! = 'y';
+`;
+
+test("test multi-statement params", (t) => {
+	const [module] = unit.parseModule(multiParamsQuery).toArray();
+	t.assert.match(unit.codegen([module], "test.sql").dts, /params: \{ a: unknown; b: \{\} \}/);
+	module[0].paramTypes = new Map([["a", "number"]]);
+	t.assert.match(unit.codegen([module], "test.sql").dts, /params: \{ a: string; b: string \}/);
+});

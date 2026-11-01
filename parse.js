@@ -1,4 +1,24 @@
 const annotationRegex = /--\s*name:\s*(?<name>[a-zA-Z][\w_]*)\s*(?<tags>(:\w+\s*)*)?\r?\n/g;
+const paramRegex = /(?<![\w\\:]):(\w+)(!(?![=~]))?/g;
+const hintRegex = /\bas\s+"([^"]+?)([!?])"/gi;
+
+/** Strips `!` and `?` nullability hints off of `as "alias!"` column aliases and all references to them. */
+export function stripHints(/** @type {string} */ query) {
+	const hinted = new Set(query.matchAll(hintRegex).map((m) => `"${m[1]}${m[2]}"`));
+	return hinted.size ? query.replaceAll(/"[^"]+"/g, (q) => (hinted.has(q) ? `${q.slice(0, -2)}"` : q)) : query;
+}
+
+/**
+ * Replaces `:param` (and `:param!`) placeholders, `$1`, `$2`, ... by default.
+ * @param {string} query
+ * @param {Iterable<string>} params
+ */
+export function bindParams(query, params, replace = (/** @type {string} */ _, /** @type {number} */ i) => `$${i + 1}`) {
+	const index = new Map([...params].map((p, i) => [p, i]));
+	return query.replaceAll(paramRegex, (m, /** @type {string} */ param) =>
+		index.has(param) ? replace(param, /** @type {number} */ (index.get(param))) : m,
+	);
+}
 
 export function* parseModule(/** @type {string} */ sql) {
 	annotationRegex.lastIndex = 0;
@@ -102,6 +122,8 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 	const match = firstMeta ? /--\s*(?<tags>(:\w+\s*)*)\r?\n/.exec(s) : annotationRegex.exec(s);
 	const meta = match?.groups;
 	const query = s.substring(match?.[0]?.length ?? 0).trim();
+	const stripped = stripHints(query);
+	const params = query.matchAll(paramRegex).toArray();
 
 	return {
 		name: firstMeta?.name || meta?.name,
@@ -110,11 +132,17 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 		mode: /:cursor|:iterable/.exec(meta?.tags)?.[0],
 		rowArray: meta?.tags?.includes(":array"),
 		query,
-		params: new Set(query.matchAll(/(?<![\w_\\:]):[\w_]+/g).map((m) => m?.[0]?.substring(1))),
-		selectFields: selectList(/(with.*\))?\s*select\s+(?<select>.*)/ims.exec(query)?.groups?.select)
+		params: new Set(params.map((m) => m[1])),
+		required: new Set(params.filter((m) => m[2]).map((m) => m[1])),
+		/** @type {[key: string, type: string][] | undefined} */
+		columns: undefined,
+		/** @type {Map<string, string> | undefined} */
+		paramTypes: undefined,
+		hints: new Map(query.matchAll(hintRegex).map((m) => [m[1], m[2]])),
+		selectFields: selectList(/(with.*\))?\s*select\s+(?<select>.*)/ims.exec(stripped)?.groups?.select)
 			.map(parseResultSymbol)
 			.toArray(),
-		returningClause: selectList(/returning\s+(?<returning>[\w\s\.\",\*]+);?$/im.exec(query)?.groups?.returning)
+		returningClause: selectList(/returning\s+(?<returning>[\w\s\.\",\*]+);?$/im.exec(stripped)?.groups?.returning)
 			.map(parseResultSymbol)
 			.toArray(),
 	};
@@ -172,8 +200,10 @@ export function codegen(
 ) {
 	let dts = [
 		// `declare module '${modulePrefix}${filename}.sql' {`
-		`import type { QueryResultRow, QueryResult, QueryArrayResult } from 'pg';\nimport { Queryable } from 'vite-plugin-postgres-import';`,
+		`import type { QueryResultRow, QueryResult, QueryArrayResult } from 'pg';\nimport type { Queryable, Interval } from 'vite-plugin-postgres-import';`,
 	];
+	const returnSymbols = (/** @type {ReturnType<typeof metadata>} */ m) =>
+		m.columns ?? (m.returningClause?.length ? m.returningClause : m.selectFields).map((s) => [s, "unknown"]);
 	let js = [
 		`import { escapeLiteral } from 'pg';\nimport { ${runtime.export} as __runtime } from '${runtime.module}';`,
 	];
@@ -186,19 +216,24 @@ export function codegen(
 					...module[0],
 					query: module.flatMap((m) => m.query).join(";\n\n"),
 					params: new Set(module.flatMap((m) => [...m.params])),
+					required: new Set(module.flatMap((m) => [...m.required])),
+					// values are inlined with escapeLiteral, which only accepts strings
+					paramTypes: module.some((m) => m.paramTypes)
+						? new Map(module.flatMap((m) => [...m.params]).map((p) => [p, "string"]))
+						: undefined,
 					execution: module.map((m) => m.execution),
-					returnSymbols: module.map((m) => (m.returningClause?.length ? m.returningClause : m.selectFields)),
+					returnSymbols: module.map(returnSymbols),
 					multiStatement: true,
 			  }
 			: {
 					...module,
 					execution: [module.execution],
-					returnSymbols: [module.returningClause?.length ? module.returningClause : module.selectFields],
+					returnSymbols: [returnSymbols(module)],
 					multiStatement: "",
 			  };
 
 		if (!module.rowArray) {
-			module.returnSymbols = module.returnSymbols.map((rs) => [...new Set(rs)]);
+			module.returnSymbols = module.returnSymbols.map((rs) => [...new Map(rs)]);
 		}
 
 		mappings.push({ name: module.name, srcLine: module.srcLine ?? 0, srcCol: module.srcCol ?? 0 });
@@ -208,11 +243,17 @@ export function codegen(
 			js[0] += `\nimport Cursor from 'pg-cursor';`;
 		}
 
+		let optionalParams = true;
 		const keys = module.params
 			.values()
-			.map((k) => `'${k}'`)
+			.map((p) => {
+				const type = module.paramTypes?.get(p) ?? "unknown";
+				if (type !== "unknown" && !module.required.has(p) && !module.multiStatement) return `${p}?: ${type} | null`;
+				optionalParams = false;
+				return `${p}: ${type === "unknown" && module.required.has(p) ? "{}" : type}`;
+			})
 			.toArray()
-			.join(" | ");
+			.join("; ");
 
 		dts.push(`/**
  * ${"```"}sql
@@ -223,16 +264,16 @@ export function ${module.name}<${module.returnSymbols
 			.map((r, i) =>
 				module.rowArray
 					? `R${i + 1} extends any[] = ${
-							r.find((k) => k.startsWith("[column: string]"))
+							r.find(([k]) => k.startsWith("[column: string]"))
 								? `unknown[]`
-								: `[ ${r?.map(() => `unknown`)?.join(", ") ?? ""} ]`
+								: `[ ${r.map(([, t]) => t).join(", ")} ]`
 					  }`
-					: `R${i + 1} extends QueryResultRow = {${r.length > 3 ? "\n\t" : " "}${
-							r?.map((r) => `${r}: unknown`)?.join(r.length > 3 ? ";\n\t" : "; ") ?? ""
-					  }${r.length > 3 ? "\n" : " "}}`
+					: `R${i + 1} extends QueryResultRow = {${r.length > 3 ? "\n\t" : " "}${r
+							.map(([k, t]) => `${k}: ${t}`)
+							.join(r.length > 3 ? ";\n\t" : "; ")}${r.length > 3 ? "\n" : " "}}`
 			)
 			.join(", ")}>(
-	${keys ? `params: Record<${keys}, unknown>` : `params?: Record<string, never>`},
+	${keys ? `params${optionalParams ? "?" : ""}: { ${keys} }` : `params?: Record<string, never>`},
 	config?: { db?: Queryable${module.mode === ":iterable" ? "; read?: number" : ""} },
 ): ${
 			module.mode === ":cursor"
@@ -259,14 +300,9 @@ export function ${module.name}<${module.returnSymbols
 			.reduce((curr, p) => [...curr, p], [])
 			.join();
 
-		module.query = module.query.replaceAll("`", "\\`");
-
-		module.params.values().forEach(
-			(param, i) =>
-				(module.query = module.query.replaceAll(
-					new RegExp(`(?<![\w_]):${param}(?![\w_])`, "gi"),
-					module.multiStatement ? `\${escapeLiteral(${param})}` : `$${i + 1}` // the escapists
-				))
+		const escaped = module.query.replaceAll("\\", "\\\\").replaceAll("`", "\\`").replaceAll("${", "\\${");
+		module.query = bindParams(stripHints(escaped), module.params, (param, i) =>
+			module.multiStatement ? `\${escapeLiteral(${param})}` : `$${i + 1}` // the escapists
 		);
 
 		if (module.prepared && module.execution.size > 1) {

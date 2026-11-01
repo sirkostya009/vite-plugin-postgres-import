@@ -184,6 +184,112 @@ Where the default runtime comes from:
 -   `type` - either `'object'` — the export is a `Queryable` (or a promise of one) — or `'function'` — the export
     is called on each query invocation and returns a `Queryable` (or a promise of one). _default:_ `'object'`
 
+### `describe`
+
+Types params and result columns from a live database instead of guessing them from the query text.
+Every query is parsed and described the way psql's `\gdesc` does it - nothing gets executed.
+
+-   `true` - connect using the standard `PG*` environment variables
+-   a connection string or a `pg` client config
+
+```js
+postgres({ describe: process.env.DATABASE_URL ?? false });
+```
+
+```sql
+-- name: GetUser :one
+select id, name, bio, mood
+from users
+where id = :id!;
+```
+
+```ts
+function GetUser<R1 extends QueryResultRow = {
+	id: string;
+	name: string;
+	bio: string | null;
+	mood: "sad" | "ok" | "happy";
+}>(params: { id: number | bigint | string }, config?): Promise<R1>;
+```
+
+-   column types follow `pg`'s default type parsers (`int8` and `numeric` are strings, `timestamptz` is a `Date`, etc.),
+    enums become unions of their labels, `json` and `jsonb` are `unknown`
+-   columns are non-null only when they come straight from a `not null` table column and the query has no outer joins
+    nor `rollup`, `cube` or `grouping sets`, unless [hinted](#column-nullability)
+-   params of multi-statement queries are always required `string`s, as they're embedded into sql string
+-   queries that fail to describe are reported as warnings and fall back to the naive types
+-   connecting times out after 5 seconds unless `connectionTimeoutMillis` is set, after which describing is skipped
+    for 10 seconds
+
+Only the generated `.d.ts` files depend on it, the generated JS stays the same. Hence the database is only ever
+connected to by the dev server, `vite build` and vitest don't connect, nor do they touch the `.d.ts` files
+describing has generated.
+
+_default:_ `false`
+
+### `typesOverrides`
+
+TypeScript types to generate for postgres types when `describe` is enabled, e.g. when you've changed `pg`'s parsers
+via `types.setTypeParser`. Keyed by type name, optionally schema-qualified. A string applies to both params and columns,
+an object sets them separately:
+
+```js
+postgres({
+	describe: true,
+	typesOverrides: {
+		int8: "bigint",
+		"int8[]": "bigint[]",
+		jsonb: "import('#types').Json",
+		"public.email": { input: "string", output: "import('#types').Email" },
+	},
+});
+```
+
+-   builtins, enums, composites and domains can be overridden
+-   `pg` parses arrays separately from their elements, so array columns need their own `name[]` entry,
+    array params fall back to the element's override
+-   domain columns pick up their override only when selected straight from a table, otherwise the base type's applies
+-   types are inserted verbatim into the generated `.d.ts`, so don't use relative paths in `import()`
+
+_default:_ `{}`
+
+## Params
+
+Params are written as `:name`. Since nullability of a param can't be inferred, a described param of type `T`
+is generated as an optional `name?: T | null`. Append a `!` to have it generated as a required `name: T`.
+Params that aren't described are always required, as `unknown`, or `{}` with a `!`:
+
+```sql
+-- name: UpdateBio :execrows
+update users
+set bio = :bio
+where id = :id!;
+```
+
+```ts
+function UpdateBio(params: { bio?: string | null; id: number | bigint | string }, config?): Promise<number>;
+```
+
+## Column nullability
+
+When `describe` can't tell whether a column is nullable, e.g. for `count(*)` or columns behind an outer join you know
+always matches, suffix its alias with `!` to make it non-null, or with `?` to make it nullable.
+The suffix is stripped from the alias and all of its references in the query that gets sent, so rows have plain
+`total` and `bio` keys:
+
+```sql
+-- name: Stats :one
+select count(*) as "total!", u.bio as "bio?"
+from users u
+group by u.bio;
+```
+
+```ts
+function Stats<R1 extends QueryResultRow = { total: string; bio: string | null }>(params?, config?): Promise<R1>;
+```
+
+Only quoted `as "alias!"` aliases are recognized.
+
 ## Import aliases
 
 If your `package.json` declares [subpath imports](https://nodejs.org/api/packages.html#subpath-imports),
@@ -295,7 +401,7 @@ and debugger stepping map back to the `.sql` source.
 
 ## What this plugin does NOT do
 
-This plugin does not connect to the database or scan a schema folder, instead naively
+Unless `describe` is enabled, this plugin does not connect to the database or scan a schema folder, instead naively
 parsing select or returning clauses to figure out potential response types.
 
 ## License
