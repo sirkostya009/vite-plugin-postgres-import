@@ -236,7 +236,8 @@ export function describer(config, typesOverrides = {}) {
 		 * @param {string} filename
 		 */
 		async annotate(modules, filename) {
-			const statements = modules.flat();
+			// slots' sql is only known at runtime
+			const statements = modules.flat().filter((s) => !s.slots.size);
 			if (!statements.length) return;
 			const texts = statements.map((s) => bindParams(stripHints(s.query), s.params));
 

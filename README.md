@@ -73,25 +73,25 @@ const rowsUpdated = await UpdateQuery({ id: 1, newFoo: "baz" }, { db: tx });
 
 The only 4 sqlc annotations that are available are the following:
 
--   `:execresult` - default if neither of the 3 below are provided, returns `QueryResult`.
+- `:execresult` - default if neither of the 3 below are provided, returns `QueryResult`.
 
     ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<QueryResult<R>>`
 
--   `:one` - returns template argument, or the default-parsed ones from the select/returning clause.
+- `:one` - returns template argument, or the default-parsed ones from the select/returning clause.
 
     ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<R>`
 
--   `:many` - returns template argument as an array, or the default-parsed ones from the select/returning clause.
+- `:many` - returns template argument as an array, or the default-parsed ones from the select/returning clause.
 
     ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<R[]>`
 
--   `:execrows` - returns number of affected rows.
+- `:execrows` - returns number of affected rows.
 
     ex.: `Query(params?, config?): Promise<number>`
 
 4 additional annotations not found in sqlc are available:
 
--   `:prepare` - prepares the statement by passing query's name to query config.
+- `:prepare` - prepares the statement by passing query's name to query config.
 
 > [!Warning]
 >
@@ -131,7 +131,7 @@ The only 4 sqlc annotations that are available are the following:
 >
 > At best, you'd get an error in the provided example, due to mismatch in provided values, and at worst, assuming different examples, you'd be getting obscure bugs related to incorrect data.
 
--   `:array` - sets `rowMode` to `'array'`. Modifies to type declarations accordingly:
+- `:array` - sets `rowMode` to `'array'`. Modifies to type declarations accordingly:
 
     ex. `:execresult`: `Query<R extends any[] = [ ... ]>(params?, config?): Promise<QueryArrayResult<R>>`
 
@@ -139,8 +139,8 @@ The only 4 sqlc annotations that are available are the following:
 
     ex. `:many`: `Query<R extends any[] = [ ... ]>(params?, config?): Promise<R[]>`
 
--   `:iterable` - returns an `AsyncGenerator`. Once [Async Iterator Helpers](https://github.com/tc39/proposal-async-iterator-helpers)
-    are in the standard, you can use crazy piping as following:
+- `:iterable` - returns an `AsyncGenerator`. Once [Async Iterator Helpers](https://github.com/tc39/proposal-async-iterator-helpers)
+  are in the standard, you can use crazy piping as following:
 
 ```js
 const result = await IterableQuery<{ ... }>({ foo: 'bar' })
@@ -152,7 +152,7 @@ const result = await IterableQuery<{ ... }>({ foo: 'bar' })
 Well maybe that didn't look too crazy, but if some filtering forces your squeel to become convoluted, and you're fine with moving
 some of that computation to JS, you can finally do that! Or at least when that proposal is in the language, that is.
 
--   `:cursor` - returns an `Cursor`
+- `:cursor` - returns an `Cursor`
 
 ex.: `Query<R extends QueryResultRow = { ... }>(params?, config?): Promise<Cursor<R>>`
 
@@ -178,19 +178,19 @@ _default:_ `process.cwd()`
 
 Where the default runtime comes from:
 
--   `module` - specifier every generated module imports the runtime from. Point it at a module of yours
-    (typically via a subpath import) that provides the database connection. _default:_ `'#db-runtime'`
--   `export` - named export of `module` holding the runtime. _default:_ `'db'`
--   `type` - either `'object'` — the export is a `Queryable` (or a promise of one) — or `'function'` — the export
-    is called on each query invocation and returns a `Queryable` (or a promise of one). _default:_ `'object'`
+- `module` - specifier every generated module imports the runtime from. Point it at a module of yours
+  (typically via a subpath import) that provides the database connection. _default:_ `'#db-runtime'`
+- `export` - named export of `module` holding the runtime. _default:_ `'db'`
+- `type` - either `'object'` — the export is a `Queryable` (or a promise of one) — or `'function'` — the export
+  is called on each query invocation and returns a `Queryable` (or a promise of one). _default:_ `'object'`
 
 ### `describe`
 
 Types params and result columns from a live database instead of guessing them from the query text.
 Every query is parsed and described the way psql's `\gdesc` does it - nothing gets executed.
 
--   `true` - connect using the standard `PG*` environment variables
--   a connection string or a `pg` client config
+- `true` - connect using the standard `PG*` environment variables
+- a connection string or a `pg` client config
 
 ```js
 postgres({ describe: process.env.DATABASE_URL ?? false });
@@ -204,22 +204,24 @@ where id = :id!;
 ```
 
 ```ts
-function GetUser<R1 extends QueryResultRow = {
-	id: string;
-	name: string;
-	bio: string | null;
-	mood: "sad" | "ok" | "happy";
-}>(params: { id: number | bigint | string }, config?): Promise<R1>;
+function GetUser<
+	R1 extends QueryResultRow = {
+		id: string;
+		name: string;
+		bio: string | null;
+		mood: "sad" | "ok" | "happy";
+	},
+>(params: { id: number | bigint | string }, config?): Promise<R1>;
 ```
 
--   column types follow `pg`'s default type parsers (`int8` and `numeric` are strings, `timestamptz` is a `Date`, etc.),
-    enums become unions of their labels, `json` and `jsonb` are `unknown`
--   columns are non-null only when they come straight from a `not null` table column and the query has no outer joins
-    nor `rollup`, `cube` or `grouping sets`, unless [hinted](#column-nullability)
--   params of multi-statement queries are always required `string`s, as they're embedded into sql string
--   queries that fail to describe are reported as warnings and fall back to the naive types
--   connecting times out after 5 seconds unless `connectionTimeoutMillis` is set, after which describing is skipped
-    for 10 seconds
+- column types follow `pg`'s default type parsers (`int8` and `numeric` are strings, `timestamptz` is a `Date`, etc.),
+  enums become unions of their labels, `json` and `jsonb` are `unknown`
+- columns are non-null only when they come straight from a `not null` table column and the query has no outer joins
+  nor `rollup`, `cube` or `grouping sets`, unless [hinted](#column-nullability)
+- params of multi-statement queries are always required `string`s, as they're embedded into sql string
+- queries that fail to describe are reported as warnings and fall back to the naive types
+- connecting times out after 5 seconds unless `connectionTimeoutMillis` is set, after which describing is skipped
+  for 10 seconds
 
 Only the generated `.d.ts` files depend on it, the generated JS stays the same. Hence the database is only ever
 connected to by the dev server, `vite build` and vitest don't connect, nor do they touch the `.d.ts` files
@@ -245,11 +247,11 @@ postgres({
 });
 ```
 
--   builtins, enums, composites and domains can be overridden
--   `pg` parses arrays separately from their elements, so array columns need their own `name[]` entry,
-    array params fall back to the element's override
--   domain columns pick up their override only when selected straight from a table, otherwise the base type's applies
--   types are inserted verbatim into the generated `.d.ts`, so don't use relative paths in `import()`
+- builtins, enums, composites and domains can be overridden
+- `pg` parses arrays separately from their elements, so array columns need their own `name[]` entry,
+  array params fall back to the element's override
+- domain columns pick up their override only when selected straight from a table, otherwise the base type's applies
+- types are inserted verbatim into the generated `.d.ts`, so don't use relative paths in `import()`
 
 _default:_ `{}`
 
@@ -269,6 +271,49 @@ where id = :id!;
 ```ts
 function UpdateBio(params: { bio?: string | null; id: number | bigint | string }, config?): Promise<number>;
 ```
+
+## Slots
+
+`@` symbol turns parameter into a slot, which is injected into the sql string directly. Slots may reference
+params with the same `:name` syntax, these have to be declared in braces after the slot:
+
+```sql
+-- name: ListUsers :many
+select *
+from users
+where org = :org! and @filter{status?, since?}
+order by @orderBy;
+```
+
+```js
+await ListUsers({
+	org,
+	filter: [status && "status = :status", since && "created_at > :since"].filter(Boolean).join(" and ") || "true",
+	orderBy: desc ? "id desc" : "id",
+	status,
+	since,
+});
+```
+
+```ts
+function ListUsers<R1 extends QueryResultRow = { [column: string]: unknown }>(
+	params: { org: {}; filter: string; orderBy: string; status?: unknown; since?: unknown },
+	config?,
+): Promise<R1[]>;
+```
+
+- slot params are bound as positional params, numbered after the query's own ones and only when referenced.
+  params outside the slot's can be referenced by the slot string without explicit enumeration
+- undeclared `:names` are left as is, you must declare all slots' possible params,
+  not all of them must be present in the slot string
+- slots are inserted verbatim, never pass user input into them
+- declared params are typed like undescribed params: required `unknown`, `{}` with a `!`,
+  and `?` makes them optional. they're not validated at runtime
+- queries with slots can't be `:prepare`d, nor described
+
+> [!Warning]
+>
+> Postgres has a prefix `@` operator for absolute values, write it as `@ x` or `abs(x)` instead.
 
 ## Column nullability
 
@@ -310,8 +355,7 @@ Exact and conditional (`{ "node": ..., "default": ... }`) targets are supported 
 
 With the `'function'` runtime type, the runtime is re-evaluated on every query call — which means it can
 consult [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html#class-asynclocalstorage) and pick up
-an _ambient_ transaction: queries anywhere down the call stack automatically run on the transaction's client,
-no threading of `{ db }` through your functions. Combined with
+an _ambient_ transaction which queries are going to run on down the call stack. Combined with
 [explicit resource management](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/await_using)
 you get commit-explicitly, rollback-on-dispose semantics without any callback wrapping.
 
@@ -392,12 +436,10 @@ await InsertAudit({ id: 1 }); // same transaction, however deep the call stack
 await tx.commit(); // anything thrown before this point rolls back on scope exit
 ```
 
-## Jump to source
+## Go to Defintion
 
-Generated `.d.ts` files ship with declaration maps pointing back at the original `.sql` file,
-so "Go to Definition" / "Go to Source Definition" on an imported function (or the import path itself) lands you
-on the query source itself. The vite transform also emits a sourcemap, so runtime stack traces
-and debugger stepping map back to the `.sql` source.
+Generated `.d.ts` files contain source maps that point to query start in `.sql` files. Triggering
+"Go to Definition" on a query function takes you straight to the source `.sql` file.
 
 ## What this plugin does NOT do
 

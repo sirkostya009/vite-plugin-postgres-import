@@ -1,5 +1,13 @@
 const annotationRegex = /--\s*name:\s*(?<name>[a-zA-Z][\w_]*)\s*(?<tags>(:\w+\s*)*)?\r?\n/g;
 const paramRegex = /(?<![\w\\:]):(\w+)(!(?![=~]))?/g;
+const slotRegex = /(?<![\w\\@<])@(\w+)(?:\{([\w\s,!?]*)\})?/g;
+const markerRank = { "?": 0, "": 1, "!": 2 };
+
+/** Sets a slot param's `!`/`?` marker, the stricter of conflicting ones wins. */
+function mergeMarker(/** @type {Map<string, string>} */ map, /** @type {string} */ param, /** @type {string} */ marker) {
+	const prev = map.get(param);
+	if (prev === undefined || markerRank[marker] > markerRank[prev]) map.set(param, marker);
+}
 const hintRegex = /\bas\s+"([^"]+?)([!?])"/gi;
 
 /** Strips `!` and `?` nullability hints off of `as "alias!"` column aliases and all references to them. */
@@ -124,6 +132,15 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 	const query = s.substring(match?.[0]?.length ?? 0).trim();
 	const stripped = stripHints(query);
 	const params = query.matchAll(paramRegex).toArray();
+	/** @type {Map<string, Map<string, string>>} */
+	const slots = new Map();
+	for (const [, slot, declared] of query.matchAll(slotRegex)) {
+		const declarations = slots.get(slot) ?? slots.set(slot, new Map()).get(slot);
+		for (const d of declared?.matchAll(/(\w+)([!?]?)/g) ?? []) mergeMarker(declarations, d[1], d[2]);
+	}
+	for (const [, p] of params) {
+		if (slots.has(p)) throw new Error(`${meta?.name ?? firstMeta?.name}: @${p} slot shares its name with a param`);
+	}
 
 	return {
 		name: firstMeta?.name || meta?.name,
@@ -134,6 +151,7 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 		query,
 		params: new Set(params.map((m) => m[1])),
 		required: new Set(params.filter((m) => m[2]).map((m) => m[1])),
+		slots,
 		/** @type {[key: string, type: string][] | undefined} */
 		columns: undefined,
 		/** @type {Map<string, string> | undefined} */
@@ -149,6 +167,8 @@ function metadata(/** @type {string} */ s, /** @type {ReturnType<typeof metadata
 
 	function parseResultSymbol(/** @type {string} */ s) {
 		s = s.trim();
+		slotRegex.lastIndex = 0;
+		if (slotRegex.test(s)) return "[column: string]";
 		while (s.startsWith("(") && s.endsWith(")")) {
 			// unwrap
 			s = s.substring(1, s.length - 1).trim();
@@ -217,6 +237,13 @@ export function codegen(
 					query: module.flatMap((m) => m.query).join(";\n\n"),
 					params: new Set(module.flatMap((m) => [...m.params])),
 					required: new Set(module.flatMap((m) => [...m.required])),
+					slots: module.reduce((acc, m) => {
+						for (const [slot, declarations] of m.slots) {
+							const merged = acc.get(slot) ?? acc.set(slot, new Map()).get(slot);
+							for (const [p, marker] of declarations) mergeMarker(merged, p, marker);
+						}
+						return acc;
+					}, new Map()),
 					// values are inlined with escapeLiteral, which only accepts strings
 					paramTypes: module.some((m) => m.paramTypes)
 						? new Map(module.flatMap((m) => [...m.params]).map((p) => [p, "string"]))
@@ -243,17 +270,22 @@ export function codegen(
 			js[0] += `\nimport Cursor from 'pg-cursor';`;
 		}
 
-		let optionalParams = true;
-		const keys = module.params
-			.values()
-			.map((p) => {
+		/** @type {Map<string, string>} */
+		const slotParams = new Map();
+		for (const declarations of module.slots.values()) {
+			for (const [p, marker] of declarations) if (!module.params.has(p)) mergeMarker(slotParams, p, marker);
+		}
+		let optionalParams = !module.slots.size;
+		const keys = [
+			...module.params.values().map((p) => {
 				const type = module.paramTypes?.get(p) ?? "unknown";
 				if (type !== "unknown" && !module.required.has(p) && !module.multiStatement) return `${p}?: ${type} | null`;
 				optionalParams = false;
 				return `${p}: ${type === "unknown" && module.required.has(p) ? "{}" : type}`;
-			})
-			.toArray()
-			.join("; ");
+			}),
+			...module.slots.keys().map((s) => `${s}: string`),
+			...slotParams.entries().map(([p, marker]) => `${p}${marker === "?" ? "?: unknown" : marker ? ": {}" : ": unknown"}`),
+		].join("; ");
 
 		dts.push(`/**
  * ${"```"}sql
@@ -305,6 +337,34 @@ export function ${module.name}<${module.returnSymbols
 			module.multiStatement ? `\${escapeLiteral(${param})}` : `$${i + 1}` // the escapists
 		);
 
+		const slotted = module.slots.size > 0;
+		let args = `{ ${paramsString} } = {}`;
+		let values = `[ ${paramsString} ]`;
+		let pre = "";
+		if (slotted) {
+			if (module.prepared) throw new Error(`${module.name}: queries with slots can't be prepared`);
+			if (!js[0].includes("__slots")) {
+				js[0] += `\nimport { slot as __slot, slots as __slots } from 'vite-plugin-postgres-import/runtime.js';`;
+			}
+			const state = `__${module.name}`;
+			js.push(
+				`const ${state} = __slots(${JSON.stringify([...module.params])}, ${JSON.stringify([...slotParams.keys()])}${
+					module.multiStatement ? ", escapeLiteral" : ""
+				});`,
+			);
+			module.query = module.query.replaceAll(
+				slotRegex,
+				(_, slot) => `\${__slot(${slot}, ${module.multiStatement ? "null" : "__v"}, __p, ${state})}`,
+			);
+			args = "__p = {}";
+			values = "__v";
+			pre = `const { ${[...module.params, ...module.slots.keys()].join()} } = __p${
+				module.multiStatement ? "" : `, __v = [ ${paramsString} ]`
+			};`;
+		}
+		const body = (/** @type {string} */ expr) => (slotted ? `{\n\t${pre}\n\treturn ${expr};\n}` : expr);
+		const valuesArg = slotted ? (module.multiStatement ? "" : ", __v") : paramsString && `, ${values}`;
+
 		if (module.prepared && module.execution.size > 1) {
 			console.warn(
 				"Postgres does not support preparing multi-statement queries. You will get an error, just sayin'"
@@ -313,12 +373,14 @@ export function ${module.name}<${module.returnSymbols
 
 		js.push(
 			module.mode === ":cursor"
-				? `export const ${module.name} = async ({ ${paramsString} } = {}, { db: __db = ${rt} } = {}) => (await __db).query(new Cursor(\`${
-						module.query
-				  }\`${paramsString && `, [ ${paramsString} ]`}${module.rowArray ? `, { rowMode: "array" }` : ""}));`
+				? `export const ${module.name} = async (${args}, { db: __db = ${rt} } = {}) => ${body(
+						`(await __db).query(new Cursor(\`${module.query}\`${valuesArg}${
+							module.rowArray ? `, { rowMode: "array" }` : ""
+						}))`,
+				  )};`
 				: module.mode === ":iterable"
-				? `export async function* ${module.name}({ ${paramsString} } = {}, { db: __db = ${rt}, read = 10 } = {}) {
-	const cursor = (await __db).query(new Cursor(\`${module.query}\`${paramsString && `, [ ${paramsString} ]`}${
+				? `export async function* ${module.name}(${args}, { db: __db = ${rt}, read = 10 } = {}) {${pre && `\n\t${pre}`}
+	const cursor = (await __db).query(new Cursor(\`${module.query}\`${valuesArg}${
 						module.rowArray ? `, { rowMode: "array" }` : ""
 				  }));
 	try {
@@ -331,10 +393,10 @@ export function ${module.name}<${module.returnSymbols
 		await cursor.close();
 	}
 }`
-				: `export const ${module.name} = async ({ ${paramsString} } = {}, { db: __db = ${rt} } = {}) => (await __db).query({
+				: `export const ${module.name} = async (${args}, { db: __db = ${rt} } = {}) => ${body(`(await __db).query({
 	${module.prepared ? `name: "${module.name}",` : ""}
 	text: \`${module.query}\`,
-	${module.multiStatement ? "" : `values: [ ${paramsString} ],`}
+	${module.multiStatement ? "" : `values: ${values},`}
 	${module.rowArray ? `rowMode: "array",` : ""}
 }).then((${module.multiStatement && "["}${module.returnSymbols.map((_, i) => `r${i + 1}`).join()}${
 						module.multiStatement && "]"
@@ -350,7 +412,7 @@ export function ${module.name}<${module.returnSymbols
 									? `.rowCount`
 									: "")
 						)
-						.join()}${module.multiStatement && "]"});`
+						.join()}${module.multiStatement && "]"})`)};`
 		);
 	}
 

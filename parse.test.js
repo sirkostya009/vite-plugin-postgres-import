@@ -226,3 +226,69 @@ test("test multi-statement params", (t) => {
 	module[0].paramTypes = new Map([["a", "number"]]);
 	t.assert.match(unit.codegen([module], "test.sql").dts, /params: \{ a: string; b: string \}/);
 });
+
+const slotsQuery = `
+-- name: Slotted :many
+select * from users where org = :org! and @filter{status?, since!, org} and @other{status, kind?} order by id;
+
+-- name: SlottedMulti :one
+select 1 where @w{x};
+-- :one
+select 2 where :y = 'y';
+`;
+
+test("test slots", async (t) => {
+	const modules = unit.parseModule(slotsQuery).toArray();
+	t.assert.deepEqual(
+		[...modules[0].slots].map(([slot, declared]) => [slot, [...declared]]),
+		[
+			["filter", [["status", "?"], ["since", "!"], ["org", ""]]],
+			["other", [["status", ""], ["kind", "?"]]],
+		],
+	);
+
+	const { js, dts } = unit.codegen(modules, "test.sql");
+	t.assert.match(dts, /params: \{ org: \{\}; filter: string; other: string; status: unknown; since: \{\}; kind\?: unknown \}/);
+
+	const calls = [];
+	const db = { query: async (q) => (calls.push(q), q.values ? { rows: [] } : [{ rows: [] }, { rows: [] }]) };
+	const { slot, slots } = await import("./runtime.js");
+	const exports = new Function(
+		"__slot",
+		"__slots",
+		"__runtime",
+		"escapeLiteral",
+		js.replaceAll(/^import .*$/gm, "").replaceAll("export const ", "const ") + "\nreturn { Slotted, SlottedMulti };",
+	)(slot, slots, db, (v) => `'${v}'`);
+
+	await exports.Slotted({ org: 1, filter: "true", other: "x = 1", status: "ok" });
+	t.assert.strictEqual(calls[0].text, "select * from users where org = $1 and true and x = 1 order by id");
+	t.assert.deepEqual(calls[0].values, [1]);
+
+	await exports.Slotted({
+		org: 1,
+		filter: "a = :status and b > :since! and c = :org and d::int = :status and e = '\\:no' and :unknown",
+		other: "s = :status",
+		status: null,
+		since: null,
+	});
+	t.assert.strictEqual(
+		calls[1].text,
+		"select * from users where org = $1 and a = $2 and b > $3 and c = $1 and d::int = $2 and e = '\\:no' and :unknown and s = $2 order by id",
+	);
+	t.assert.deepEqual(calls[1].values, [1, null, null]);
+
+	// positions from the previous call must not leak
+	await exports.Slotted({ org: 1, filter: "b > :since", other: "s = :status", status: null, since: null });
+	t.assert.strictEqual(calls[2].text, "select * from users where org = $1 and b > $2 and s = $3 order by id");
+	t.assert.deepEqual(calls[2].values, [1, null, null]);
+
+	await exports.SlottedMulti({ w: "a = :x and b = :y", x: "1", y: "2" });
+	t.assert.strictEqual(calls[3].text, "select 1 where a = '1' and b = '2';\n\nselect 2 where '2' = 'y'");
+	t.assert.strictEqual(calls[3].values, undefined);
+});
+
+test("test slots errors", (t) => {
+	t.assert.throws(() => unit.parseModule("-- name: A :one\nselect @x where :x = 1;").toArray(), /shares its name/);
+	t.assert.throws(() => unit.codegen(unit.parseModule("-- name: A :one :prepare\nselect @x;"), "test.sql"), /prepared/);
+});
